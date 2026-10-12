@@ -98,6 +98,20 @@ own contract test:
 - The nested provider event inside `message_update` is boxed, because that event is
   produced once per streamed token and would otherwise carry roughly half a kilobyte.
 
+### Portability deviations
+
+Two parts of the reference are not portable as written, both for the same reason:
+Rust marks environment mutation as `unsafe` in edition 2024, and this workspace
+forbids unsafe code.
+
+| tau | taurust | Why |
+|---|---|---|
+| `http.py` rewrites `os.environ` around client construction so a generic `socks://` proxy becomes `socks5://`, then restores it | `http::normalize_proxy_url` is a pure function applied where the proxy is read | Mutating process state around a construction races against every other thread |
+| `env.py` reads `os.environ` directly; its tests monkeypatch the environment | Reading goes through an `EnvSource`; `MapEnv` serves tests and injected configuration | Test isolation without global mutable state |
+
+Both changes also make the port testable without process-global side effects, which
+is why they are kept rather than worked around.
+
 > The remaining per-module maps (JSONL record shape, CLI surface, TUI widget
 > inventory) are recorded here before the tasks that depend on them start.
 
@@ -106,7 +120,7 @@ own contract test:
 - T1 — Workspace foundation: `git init`, Cargo workspace, crate skeletons, lint/format config, CI, README, AGENTS.md · Spec: S1,S6 · Route: inline · Commit: `dcc7382`
 - T2 — `tau-protocol`: content blocks, transcript messages, usage and timing, Pi wire fidelity · Spec: S1 · Route: inline · Commit: `b9ae762`
 - T3 — `tau-protocol`: streaming events (assistant and agent), the `ModelProvider` trait; the fake provider lives in `tau-ai` · Spec: S1 · Route: inline · Commit: `5976a91`
-- T4 — `tau-ai`: HTTP client, retry/backoff policy, error taxonomy · Spec: S1 · Route: pending · Commit: pending
+- T4 — `tau-ai`: error taxonomy, retry/backoff policy, proxy normalization, configuration reading; the HTTP transport binding moved into T20 · Spec: S1 · Route: inline · Commit: `31cda32`
 - T5 — `tau-agent`: tool protocol and tool registry · Spec: S1 · Route: pending · Commit: pending
 - T6 — `tau-agent`: agent loop and harness · Spec: S1 · Route: pending · Commit: pending
 - T7 — `tau-agent`: session storage with the JSONL record format · Spec: S1 · Route: pending · Commit: pending
@@ -122,7 +136,7 @@ own contract test:
 - T17 — `tau-tui`: gauges, usage view, stats view · Spec: S2,S3 · Route: pending · Commit: pending
 - T18 — `tau-tui`: command palette, native choice lists, overlays · Spec: S2,S3 · Route: pending · Commit: pending
 - T19 — `tau-tui`: keybindings and visual configuration · Spec: S2,S3 · Route: pending · Commit: pending
-- T20 — Providers: anthropic, openai-compatible, openai-codex, google, mistral, plus OAuth flows · Spec: S1 · Route: pending · Commit: pending
+- T20 — Providers: anthropic, openai-compatible, openai-codex, google, mistral, plus OAuth flows and the HTTP transport binding · Spec: S1 · Route: pending · Commit: pending
 - T21 — Sessions: export, reload, extensions, RPC surface · Spec: S1 · Route: pending · Commit: pending
 - T22 — Parity gate: behaviour checklist run against the Rust binary, side by side with tau · Spec: S1,S3,S4 · Route: pending · Commit: pending
 
@@ -146,6 +160,15 @@ own contract test:
 - Reference-first paid off twice in this task alone: it caught the real layer
   violation in `tau-agent`, and it is why the `deny_unknown_fields` claim was probed
   instead of trusted.
+- T4 done. 34 tests added, 60 in the suite, clippy clean. RED observed before
+  implementing. Checked the reference twice against my own work and it was wrong
+  both times: the `"{}"` error-body case (my assertion contradicted tau, and tau's
+  behaviour was kept) and the retry-event accessors. Two deliberate portability
+  deviations recorded above.
+- T4 partial by design: the HTTP transport binding is deferred to T20, where a
+  real caller and tau's request construction are available. The whole remaining
+  surface of T4 — the policy that decides when to retry, what to say and how to
+  read configuration — is done and under test.
 - Subagent note: two `gentle-ai-explore` subagents were dispatched for the tau
   architecture map and the gentle-shell visual map; both failed with "assistant
   reported an error". Mapping is therefore done inline with bounded reads. Worth
