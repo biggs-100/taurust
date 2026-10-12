@@ -46,40 +46,87 @@ Out of scope by S4: the startup banner.
 
 ### Rust architecture
 
-```
-tau-tui     (frontend, consumes events) -> tau-coding -> tau-agent -> tau-ai
+```text
+tau-tui  ->  tau-coding  ->  tau-agent
+tau-coding, tau-agent, tau-ai  ->  tau-protocol
 ```
 
 The boundary rule from `tau/AGENTS.md`: the core must not know about the terminal,
 local config paths, slash commands or rendering. Frontends consume events.
 
-> The detailed per-module map (contracts, JSONL record shape, CLI surface, TUI widget
-> inventory) is filled in per phase from a scoped exploration of the corresponding
-> layer, and recorded here before that phase's tasks start.
+**Deviation from S6, deliberate.** The agreed layout was four crates. A fifth was
+added, `tau-protocol`, holding the shared vocabulary. Reason: in tau the provider
+contract (`ModelProvider`, the canonical assistant events) is owned by
+`tau_agent`, while the adapters live in `tau_ai` — so `tau_ai` imports
+`tau_agent` (`tau/src/tau_ai/events.py:3`, `tau/src/tau_ai/provider.py:3`,
+`tau/src/tau_ai/fake.py:9-11`). A Rust crate graph cannot reproduce that arrow
+without inverting the layer meaning, so the vocabulary became a leaf that both
+sides depend on. The four agreed crates keep their names and responsibilities.
+
+### The wire contract (verified, not guessed)
+
+Checked against `tau/tests/test_agent_types.py`, which is the Python original's
+own contract test:
+
+- Field names are camelCase (`toolCallId`, `thoughtSignature`, `timeToFirstOutputMs`).
+- `None` fields are **serialized as `null`**, not omitted (`thoughtSignature: null`).
+- Unknown fields are **rejected** on deserialization.
+- `UserMessage.content` is a bare JSON string for text-only input and an array once
+  an image is attached.
+- Every message carries its own `role` marker, so a message stored alone stays
+  self-describing.
+- One trap: Python's `_to_camel` turns `cache_write_1h` into `cacheWrite1H`, which
+  Rust's `rename_all = "camelCase"` would render as `cacheWrite1h`. Handled with an
+  explicit rename.
+- Two decisions forced by Rust's serializer: `AgentMessage` is an **untagged** enum
+  (serde cannot combine an internally tagged enum with `deny_unknown_fields`, and
+  the `role` key has to remain a real field), and the assistant variant is **boxed**
+  (368 bytes against 144 for the next largest variant, in a transcript held in memory).
+
+> The remaining per-module maps (JSONL record shape, CLI surface, TUI widget
+> inventory) are recorded here before the tasks that depend on them start.
 
 ## Tasks
 
-- T1 — Workspace foundation: `git init`, Cargo workspace, four crate skeletons, toolchain pinning, lint/format config, CI, README, AGENTS.md · Spec: S1,S6 · Route: inline · Commit: pending
-- T2 — `tau-ai`: content model, provider-neutral event stream, `ModelProvider` trait, fake provider · Spec: S1 · Route: pending · Commit: pending
-- T3 — `tau-ai`: HTTP client, retry/backoff policy, error taxonomy · Spec: S1 · Route: pending · Commit: pending
-- T4 — `tau-agent`: messages, types, tool protocol and registry · Spec: S1 · Route: pending · Commit: pending
-- T5 — `tau-agent`: agent loop and harness · Spec: S1 · Route: pending · Commit: pending
-- T6 — `tau-agent`: session storage with the JSONL record format · Spec: S1 · Route: pending · Commit: pending
-- T7 — `tau-coding`: paths, provider config resolution, credential store · Spec: S1 · Route: pending · Commit: pending
-- T8 — `tau-coding`: built-in tool implementations (read, write, edit, shell, search) · Spec: S1 · Route: pending · Commit: pending
-- T9 — `tau-coding`: CLI surface with parity to the typer app · Spec: S1 · Route: pending · Commit: pending
-- T10 — `tau-coding`: context and system-prompt assembly, project trust, skills, extensions · Spec: S1 · Route: pending · Commit: pending
-- T11 — `tau-tui`: primitives — theme roles, layout, width measurement, box drawing, ANSI · Spec: S2,S3 · Route: pending · Commit: pending
-- T12 — `tau-tui`: prompt chrome, idle/working/queued states, working-label animation · Spec: S2,S3 · Route: pending · Commit: pending
-- T13 — `tau-tui`: sidebar with Status / Project / Changes / Integrations · Spec: S2,S3 · Route: pending · Commit: pending
-- T14 — `tau-tui`: todo panel · Spec: S5 · Route: pending · Commit: pending
-- T15 — `tau-tui`: tool cards, output rendering, diff view · Spec: S2,S3 · Route: pending · Commit: pending
-- T16 — `tau-tui`: gauges, usage view, stats view · Spec: S2,S3 · Route: pending · Commit: pending
-- T17 — `tau-tui`: command palette, native choice lists, overlays · Spec: S2,S3 · Route: pending · Commit: pending
-- T18 — `tau-tui`: keybindings and visual configuration · Spec: S2,S3 · Route: pending · Commit: pending
-- T19 — Providers: anthropic, openai-compatible, openai-codex, google, mistral, plus OAuth flows · Spec: S1 · Route: pending · Commit: pending
-- T20 — Sessions: export, reload, extensions, RPC surface · Spec: S1 · Route: pending · Commit: pending
-- T21 — Parity gate: behaviour checklist run against the Rust binary, side by side with tau · Spec: S1,S3,S4 · Route: pending · Commit: pending
+- T1 — Workspace foundation: `git init`, Cargo workspace, crate skeletons, lint/format config, CI, README, AGENTS.md · Spec: S1,S6 · Route: inline · Commit: `dcc7382`
+- T2 — `tau-protocol`: content blocks, transcript messages, usage and timing, Pi wire fidelity · Spec: S1 · Route: inline · Commit: `b9ae762`
+- T3 — `tau-protocol`: streaming events (assistant and agent), `ModelProvider` trait, fake provider · Spec: S1 · Route: pending · Commit: pending
+- T4 — `tau-ai`: HTTP client, retry/backoff policy, error taxonomy · Spec: S1 · Route: pending · Commit: pending
+- T5 — `tau-agent`: tool protocol and tool registry · Spec: S1 · Route: pending · Commit: pending
+- T6 — `tau-agent`: agent loop and harness · Spec: S1 · Route: pending · Commit: pending
+- T7 — `tau-agent`: session storage with the JSONL record format · Spec: S1 · Route: pending · Commit: pending
+- T8 — `tau-coding`: paths, provider config resolution, credential store · Spec: S1 · Route: pending · Commit: pending
+- T9 — `tau-coding`: built-in tool implementations (read, write, edit, shell, search) · Spec: S1 · Route: pending · Commit: pending
+- T10 — `tau-coding`: CLI surface with parity to the typer app · Spec: S1 · Route: pending · Commit: pending
+- T11 — `tau-coding`: context and system-prompt assembly, project trust, skills, extensions · Spec: S1 · Route: pending · Commit: pending
+- T12 — `tau-tui`: primitives — theme roles, layout, width measurement, box drawing, ANSI · Spec: S2,S3 · Route: pending · Commit: pending
+- T13 — `tau-tui`: prompt chrome, idle/working/queued states, working-label animation · Spec: S2,S3 · Route: pending · Commit: pending
+- T14 — `tau-tui`: sidebar with Status / Project / Changes / Integrations · Spec: S2,S3 · Route: pending · Commit: pending
+- T15 — `tau-tui`: todo panel · Spec: S5 · Route: pending · Commit: pending
+- T16 — `tau-tui`: tool cards, output rendering, diff view · Spec: S2,S3 · Route: pending · Commit: pending
+- T17 — `tau-tui`: gauges, usage view, stats view · Spec: S2,S3 · Route: pending · Commit: pending
+- T18 — `tau-tui`: command palette, native choice lists, overlays · Spec: S2,S3 · Route: pending · Commit: pending
+- T19 — `tau-tui`: keybindings and visual configuration · Spec: S2,S3 · Route: pending · Commit: pending
+- T20 — Providers: anthropic, openai-compatible, openai-codex, google, mistral, plus OAuth flows · Spec: S1 · Route: pending · Commit: pending
+- T21 — Sessions: export, reload, extensions, RPC surface · Spec: S1 · Route: pending · Commit: pending
+- T22 — Parity gate: behaviour checklist run against the Rust binary, side by side with tau · Spec: S1,S3,S4 · Route: pending · Commit: pending
+
+## Progress
+
+- T1 done. Four crates, `unsafe_code` forbidden workspace-wide, CI running fmt +
+  clippy + tests, `--version`/`--help`/no-args/unknown-argument behaviour covered by
+  4 tests. RED observed before the implementation (unresolved imports). `fmt` and
+  `clippy` clean, binary smoke-tested: `tau 0.1.0` exit 0, unknown flag exit 2.
+  Deliberate omission: no `rust-toolchain.toml`, so no toolchain is force-downloaded
+  on every invocation; the floor is pinned by `rust-version = "1.85"` in the workspace.
+- T2 done. `tau-protocol` with `content`, `message`, `json`; 10 wire-format tests
+  mirroring `tau/tests/test_agent_types.py`. RED observed, then GREEN on the first
+  implementation pass. One clippy finding (`large_enum_variant`) fixed by boxing
+  rather than by silencing, because CI runs with `-D warnings`.
+- Subagent note: two `gentle-ai-explore` subagents were dispatched for the tau
+  architecture map and the gentle-shell visual map; both failed with "assistant
+  reported an error". Mapping is therefore done inline with bounded reads. Worth
+  retrying with narrower prompts at the start of the TUI phase (T12+).
 
 ## Log
 
