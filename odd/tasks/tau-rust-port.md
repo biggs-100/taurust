@@ -123,7 +123,7 @@ is why they are kept rather than worked around.
 - T4 — `tau-ai`: error taxonomy, retry/backoff policy, proxy normalization, configuration reading; the HTTP transport binding moved into T20 · Spec: S1 · Route: inline · Commit: `31cda32`
 - T5 — `tau-agent`: tool execution protocol and tool registry · Spec: S1 · Route: inline · Commit: `6fafd6b`
 - T6 — `tau-agent`: agent loop and harness · Spec: S1 · Route: inline · Commit: `e6cea1f`, `625825a`, `bee74bc`
-- T7 — `tau-agent`: session storage with the JSONL record format · Spec: S1 · Route: pending · Commit: pending
+- T7 — `tau-agent`: session storage with the JSONL record format · Spec: S1 · Route: inline · Commit: `7201283`, `6a77906`
 - T8 — `tau-coding`: paths, provider config resolution, credential store · Spec: S1 · Route: pending · Commit: pending
 - T9 — `tau-coding`: built-in tool implementations (read, write, edit, shell, search) · Spec: S1 · Route: pending · Commit: pending
 - T10 — `tau-coding`: CLI surface with parity to the typer app · Spec: S1 · Route: pending · Commit: pending
@@ -137,7 +137,7 @@ is why they are kept rather than worked around.
 - T18 — `tau-tui`: command palette, native choice lists, overlays · Spec: S2,S3 · Route: pending · Commit: pending
 - T19 — `tau-tui`: keybindings and visual configuration · Spec: S2,S3 · Route: pending · Commit: pending
 - T20 — Providers: anthropic, openai-compatible, openai-codex, google, mistral, plus OAuth flows and the HTTP transport binding · Spec: S1 · Route: pending · Commit: pending
-- T21 — Sessions: export, reload, extensions, RPC surface · Spec: S1 · Route: pending · Commit: pending
+- T21 — Sessions: export, reload, extensions, RPC surface, and the deferred legacy Tau-v1 record migration · Spec: S1 · Route: pending · Commit: pending
 - T22 — Parity gate: behaviour checklist run against the Rust binary, side by side with tau · Spec: S1,S3,S4 · Route: pending · Commit: pending
 
 ## Progress
@@ -200,6 +200,18 @@ is why they are kept rather than worked around.
   against the repository rather than guessed), which is why the runner reports
   Node.js 20 as deprecated, and `ubuntu-latest` migrates to Ubuntu 26 in October
   2026.
+- T7 done, two commits: `7201283` the ten entry types and the persisted JSONL
+  format (12 tests), `6a77906` in-memory and file-backed storage (14 tests). 131
+  tests in the suite, clippy clean.
+  Deferred, with the reason recorded because it changes what taurust can read:
+  `jsonl.py`'s migration of pre-bookmark Tau-v1 records. Nothing in taurust writes
+  that shape, so it only matters when pointing taurust at an existing tau session
+  directory; it moves to T21 with the rest of the session-management work.
+  TDD order was inverted again for the storage: the synchronous-versus-async
+  decision and the lock-and-rename design had to be settled before tests could be
+  written against them. The two tests that failed during T7 were real defects — an
+  empty replaced-id list stripped on read instead of on write, and a line-number
+  assertion pointing at the wrong line.
 - Subagent note: two `gentle-ai-explore` subagents were dispatched for the tau
   architecture map and the gentle-shell visual map; both failed with "assistant
   reported an error". Mapping is therefore done inline with bounded reads. Worth
