@@ -124,7 +124,7 @@ is why they are kept rather than worked around.
 - T5 — `tau-agent`: tool execution protocol and tool registry · Spec: S1 · Route: inline · Commit: `6fafd6b`
 - T6 — `tau-agent`: agent loop and harness · Spec: S1 · Route: inline · Commit: `e6cea1f`, `625825a`, `bee74bc`
 - T7 — `tau-agent`: session storage with the JSONL record format · Spec: S1 · Route: inline · Commit: `7201283`, `6a77906`
-- T8 — `tau-coding`: paths, provider config resolution, credential store · Spec: S1 · Route: pending · Commit: pending
+- T8 — `tau-coding`: paths, provider config resolution, credential store · Spec: S1 · Route: worker + parent verification · Commit: `dd3cd30`, `f56178b`
 - T9 — `tau-coding`: built-in tool implementations (read, write, edit, shell, search) · Spec: S1 · Route: pending · Commit: pending
 - T10 — `tau-coding`: CLI surface with parity to the typer app · Spec: S1 · Route: pending · Commit: pending
 - T11 — `tau-coding`: context and system-prompt assembly, project trust, skills, extensions · Spec: S1 · Route: pending · Commit: pending
@@ -212,6 +212,22 @@ is why they are kept rather than worked around.
   written against them. The two tests that failed during T7 were real defects — an
   empty replaced-id list stripped on read instead of on write, and a line-number
   assertion pointing at the wrong line.
+- T8 done in two commits: `dd3cd30` path resolution (11 tests, written inline) and the
+  credential store plus provider configuration resolution (56 tests), written by a
+  delegated `gentle-ai-worker` and verified here — only the allowed surfaces
+  changed, `fmt` clean, `clippy` clean under `-D warnings`, 202 tests against 146
+  before, and all 80 user-facing message strings checked against the reference
+  literals (73 literally in the two ported modules, 3 from the unported
+  `thinking.py`, and the interpolation templates confirmed by prefix).
+  Disclosed scope gaps, each because the module it needs is not ported yet:
+  `load_provider_settings` reads and parses but does not merge the built-in catalog
+  in, so a preferences-only file returns only the preferred providers where the
+  reference returns the credentialed catalog; persistence write-back, the OAuth
+  registry gate, and the startup thinking-level policy are absent; and the runtime
+  adapter config is exposed as resolution functions rather than built, because the
+  types it returns belong to `tau_ai`.
+  The thinking-level vocabulary currently lives in `provider_config` and must move
+  to `tau-coding::thinking` when that module is ported.
 - Subagent note: two `gentle-ai-explore` subagents were dispatched for the tau
   architecture map and the gentle-shell visual map; both failed with "assistant
   reported an error". Mapping is therefore done inline with bounded reads. Worth
