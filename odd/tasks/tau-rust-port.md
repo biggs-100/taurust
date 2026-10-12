@@ -468,6 +468,26 @@ is why they are kept rather than worked around.
   Every hash quoted earlier in this entry belongs to the pre-rewrite history and no
   longer exists. The corrections those commits describe are folded into the slices
   above on purpose, so a reviewer never re-finds a defect that is already fixed.
+  above on purpose, so a reviewer never re-finds a defect that is already fixed.
+- Native review of T9: declared unavailable for this exact candidate, on the user's
+  decision, after the provider refused it in every admissible shape. The cause and
+  its reproductions are recorded in `odd/rdd-lens-budget-defect.md`: on
+  `gentle-ai 4.0.0` a high-risk candidate must select all four lenses, their
+  combined reviewer evidence exceeds the native context budget, and neither
+  `--focus` nor `--policy` can change that shape. A coherent 1960-line slice fails
+  the same way, so the provider's "split it into smaller candidates" remedy cannot
+  be followed to success. Two traps came out of the investigation and are in that
+  note: the `--consent=relay` question is emitted *before* the evidence is
+  materialized, so receiving it proves nothing, and the consent envelope's own
+  `granted` invocation omits the flag that made the envelope producible, so a host
+  that executes the envelope faithfully cannot succeed.
+  `assess` therefore records `nativeReviewOutcome: unavailable` with
+  `outcome_source: explicit` for the whole `6ee432f..HEAD` candidate, and the risk
+  plan still requires an independent verifier — which T9 has: three rounds,
+  verdicts `fail`, `fail`, `pass`. The native review is an additional outside view
+  and its absence does not lower the bar: `fmt`, `clippy --workspace --all-targets
+  -- -D warnings`, the 331-test workspace suite and the Linux cross-check all
+  still stand, and the chained slices remain the reviewable history.
 
 ## Log
 
