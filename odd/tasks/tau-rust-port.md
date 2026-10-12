@@ -169,6 +169,12 @@ is why they are kept rather than worked around.
   real caller and tau's request construction are available. The whole remaining
   surface of T4 — the policy that decides when to retry, what to say and how to
   read configuration — is done and under test.
+- Published at <https://github.com/biggs-100/taurust> (public), default branch `main`,
+  with `feat/tau-rust-port` as the working branch. Publishing surfaced a real gap:
+  `Cargo.toml` declared `license = "MIT"` but no `LICENSE` file existed. Because the
+  repository is public and this is a derivative work, both upstream MIT notices
+  were reproduced in `THIRD-PARTY-NOTICES.md` before the first push, read from the
+  upstream `LICENSE` files rather than recalled.
 - Subagent note: two `gentle-ai-explore` subagents were dispatched for the tau
   architecture map and the gentle-shell visual map; both failed with "assistant
   reported an error". Mapping is therefore done inline with bounded reads. Worth
@@ -178,4 +184,4 @@ is why they are kept rather than worked around.
 
 - L1 — User: *"quiro rehacer tau pero con rust y la shell que se vea como gentle-shell  C:\Users\USER\Desktop\herramientas\gentle-shell  C:\Users\USER\Desktop\herramientas\tau"*
 - L2 — User: *"y el todo de gentle shell"* (appended while the scope questionnaire was open; the user cancelled the questionnaire). Read together with L3 as confirming the gentle-shell todo panel is in scope.
-- L3 — User: *"completo, menos el banner"*. Resolves both open questions: full port (not a vertical slice) and the complete gentle-shell visual experience, excluding the startup banner. The orchestrator's stated defaults for destination and crate layout were not corrected, so they stand as S6.
+- L4 — User: *"ok, antes de continuar crea el repo en github y pushea"*. Published at <https://github.com/biggs-100/taurust>. Asked and answered before publishing, because publishing is not fully reversible: visibility **public**, and therefore the MIT notices of both upstream works reproduced in `THIRD-PARTY-NOTICES.md` before the first push; default branch **`main`**, created at the published state, with `feat/tau-rust-port` kept as the working branch.
