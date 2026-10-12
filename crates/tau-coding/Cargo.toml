@@ -12,11 +12,17 @@ tau-agent.workspace = true
 tau-ai.workspace = true
 sha2.workspace = true
 dirs.workspace = true
+image.workspace = true
 serde_json.workspace = true
 tempfile.workspace = true
+tokio = { workspace = true, features = ["io-util", "process", "rt", "sync", "time"] }
 
 [dev-dependencies]
 tempfile.workspace = true
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
+
+[target.'cfg(unix)'.dependencies]
+rustix.workspace = true
 
 [lints]
 workspace = true
