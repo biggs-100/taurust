@@ -122,7 +122,7 @@ is why they are kept rather than worked around.
 - T3 — `tau-protocol`: streaming events (assistant and agent), the `ModelProvider` trait; the fake provider lives in `tau-ai` · Spec: S1 · Route: inline · Commit: `5976a91`
 - T4 — `tau-ai`: error taxonomy, retry/backoff policy, proxy normalization, configuration reading; the HTTP transport binding moved into T20 · Spec: S1 · Route: inline · Commit: `31cda32`
 - T5 — `tau-agent`: tool execution protocol and tool registry · Spec: S1 · Route: inline · Commit: `6fafd6b`
-- T6 — `tau-agent`: agent loop and harness · Spec: S1 · Route: pending · Commit: pending
+- T6 — `tau-agent`: agent loop and harness · Spec: S1 · Route: inline · Commit: `e6cea1f`, `625825a`, `bee74bc`
 - T7 — `tau-agent`: session storage with the JSONL record format · Spec: S1 · Route: pending · Commit: pending
 - T8 — `tau-coding`: paths, provider config resolution, credential store · Spec: S1 · Route: pending · Commit: pending
 - T9 — `tau-coding`: built-in tool implementations (read, write, edit, shell, search) · Spec: S1 · Route: pending · Commit: pending
@@ -180,13 +180,17 @@ is why they are kept rather than worked around.
   `prepare_arguments` are declared on every tool in tau but its own loop never
   reads them, so they are ported as declarations with no scheduler pretending to
   use them.
-- T6 in progress, delivered as three commits because the reference spreads this
-  over ~800 lines across `loop.py`, `harness.py` and `tool_history.py`.
-  Commit `e6cea1f`: provider-safe tool history repair, 8 tests mirroring
-  `tau/tests/test_tool_history.py`. Commit `625825a`: the agent loop, 11 tests, 96
-  in the suite, clippy clean. Outstanding: the harness — stateful queues,
-  subscribers, cancellation, and the interrupted-tool-result repair the reference
-  runs both at the start of a run and again when a run is cancelled.
+- T6 done, delivered as three commits because the reference spreads this over
+  ~800 lines across `loop.py`, `harness.py` and `tool_history.py`: `e6cea1f`
+  provider-safe tool history repair (8 tests mirroring
+  `tau/tests/test_tool_history.py`), `625825a` the agent loop (11 tests),
+  `bee74bc` the harness (9 tests). 105 tests in the suite, clippy clean.
+  TDD order was inverted for the harness alone: the implementation was written
+  first, because the design had to be settled before tests could be written
+  against it — shared state behind an `Arc`, and a `Drop` guard for the
+  cancellation repair, since Rust cannot await inside `Drop`. The tests are
+  therefore verification rather than observed-RED evidence, which is stated here
+  instead of implied.
 - CI gap found and closed. The workflow only ran on a push to `main` and on pull
   requests, so every push to the working branch went unverified: the suite was only
   ever exercised on Linux at merge time. `feat/**` was added to the push trigger
