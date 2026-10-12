@@ -54,6 +54,13 @@ tau-coding, tau-agent, tau-ai  ->  tau-protocol
 The boundary rule from `tau/AGENTS.md`: the core must not know about the terminal,
 local config paths, slash commands or rendering. Frontends consume events.
 
+**Layer invariant (from the reference).** `tau_agent` must never import `tau_ai`;
+tau asserts this in `tau/tests/test_pi_event_protocol.py:34` by scanning its own
+sources. The Rust crate graph enforces it structurally: a provider is consumed
+through the `tau-protocol` trait, never by name, so `tau-agent` declares no
+dependency on `tau-ai`. An earlier `Cargo.toml` here did declare it; that was a
+real violation, found only by consulting the reference.
+
 **Deviation from S6, deliberate.** The agreed layout was four crates. A fifth was
 added, `tau-protocol`, holding the shared vocabulary. Reason: in tau the provider
 contract (`ModelProvider`, the canonical assistant events) is owned by
@@ -82,6 +89,14 @@ own contract test:
   (serde cannot combine an internally tagged enum with `deny_unknown_fields`, and
   the `role` key has to remain a real field), and the assistant variant is **boxed**
   (368 bytes against 144 for the next largest variant, in a transcript held in memory).
+- Events are deliberately **not** strict. Serde silently ignores
+  `deny_unknown_fields` on an internally tagged enum. This was probed, not assumed:
+  the strict test written to confirm the attribute failed. The real behaviour is now
+  pinned by a test — an event tolerates an unknown field, a stored message rejects one.
+  Leniency is right for a transient wire event: a provider that starts sending a new
+  field must not break the stream.
+- The nested provider event inside `message_update` is boxed, because that event is
+  produced once per streamed token and would otherwise carry roughly half a kilobyte.
 
 > The remaining per-module maps (JSONL record shape, CLI surface, TUI widget
 > inventory) are recorded here before the tasks that depend on them start.
@@ -90,7 +105,7 @@ own contract test:
 
 - T1 — Workspace foundation: `git init`, Cargo workspace, crate skeletons, lint/format config, CI, README, AGENTS.md · Spec: S1,S6 · Route: inline · Commit: `dcc7382`
 - T2 — `tau-protocol`: content blocks, transcript messages, usage and timing, Pi wire fidelity · Spec: S1 · Route: inline · Commit: `b9ae762`
-- T3 — `tau-protocol`: streaming events (assistant and agent), `ModelProvider` trait, fake provider · Spec: S1 · Route: pending · Commit: pending
+- T3 — `tau-protocol`: streaming events (assistant and agent), the `ModelProvider` trait; the fake provider lives in `tau-ai` · Spec: S1 · Route: inline · Commit: `5976a91`
 - T4 — `tau-ai`: HTTP client, retry/backoff policy, error taxonomy · Spec: S1 · Route: pending · Commit: pending
 - T5 — `tau-agent`: tool protocol and tool registry · Spec: S1 · Route: pending · Commit: pending
 - T6 — `tau-agent`: agent loop and harness · Spec: S1 · Route: pending · Commit: pending
@@ -123,6 +138,14 @@ own contract test:
   mirroring `tau/tests/test_agent_types.py`. RED observed, then GREEN on the first
   implementation pass. One clippy finding (`large_enum_variant`) fixed by boxing
   rather than by silencing, because CI runs with `-D warnings`.
+- T3 done. 11 tests added (7 event-shape, 4 provider), 26 tests in the suite,
+  clippy clean. RED observed in both crates before implementing. The fake provider
+  went to `tau-ai`, matching `tau_ai/fake.py`, rather than to `tau-protocol`.
+  Cancellation is checked before every event and the stream is hand-written, which
+  removed the `async-stream` dependency.
+- Reference-first paid off twice in this task alone: it caught the real layer
+  violation in `tau-agent`, and it is why the `deny_unknown_fields` claim was probed
+  instead of trusted.
 - Subagent note: two `gentle-ai-explore` subagents were dispatched for the tau
   architecture map and the gentle-shell visual map; both failed with "assistant
   reported an error". Mapping is therefore done inline with bounded reads. Worth
