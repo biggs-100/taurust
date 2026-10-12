@@ -8,14 +8,19 @@ description = "Portable agent harness: messages, tools, loop, session"
 
 # tau_agent must never depend on tau_ai. The Python original enforces this with
 # tests/test_pi_event_protocol.py, and the Rust crate graph enforces it for free:
-# a provider is consumed through the tau-protocol trait, never by name.
+# a provider is consumed through the tau-protocol trait, never by name. That also
+# means the loop tests define their own fake provider instead of reusing one.
 [dependencies]
 tau-protocol.workspace = true
 async-trait.workspace = true
+async-stream.workspace = true
+futures-core.workspace = true
+futures-util.workspace = true
 serde_json.workspace = true
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["macros", "rt"] }
+futures-executor.workspace = true
 
 [lints]
 workspace = true
