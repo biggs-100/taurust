@@ -19,5 +19,9 @@ jobs:
           components: rustfmt, clippy
       - uses: Swatinem/rust-cache@v2
       - run: cargo fmt --all --check
+      # A plain build, deliberately without --all-targets: that flag unifies
+      # dev-dependencies, and a target that needs a dependency feature declared
+      # only there compiles under test but not for a user building the binary.
+      - run: cargo build --workspace --all-features
       - run: cargo clippy --all-targets --all-features
       - run: cargo test --all-features
