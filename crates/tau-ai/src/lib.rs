@@ -8,4 +8,9 @@
 
 #![forbid(unsafe_code)]
 
+pub mod env;
 pub mod fake;
+pub mod http;
+pub mod http_errors;
+pub mod provider_events;
+pub mod retry;
