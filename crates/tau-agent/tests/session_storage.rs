@@ -241,6 +241,29 @@ fn a_torn_final_line_is_ignored_and_repaired() {
 }
 
 #[test]
+fn a_batch_repairs_a_torn_tail_before_appending() {
+    let (_directory, path, storage) = store();
+    storage
+        .append(&user_message("committed", "e1"))
+        .expect("the append succeeds");
+
+    let mut contents = std::fs::read_to_string(&path).expect("the transcript is readable");
+    contents.push_str("{\"id\":\"e2\",\"type\":\"mess");
+    std::fs::write(&path, contents).expect("the torn write is simulated");
+
+    storage
+        .append_batch(&[user_message("batched", "e3")])
+        .expect("the batch succeeds");
+
+    let readable = storage.read_all().expect("the read succeeds");
+    assert_eq!(
+        texts(&readable),
+        vec!["committed", "batched"],
+        "a batch must not inherit a torn tail"
+    );
+}
+
+#[test]
 fn a_terminated_malformed_line_is_still_reported() {
     let (_directory, path, _storage) = store();
     std::fs::write(&path, "not json\n").expect("the transcript is written");

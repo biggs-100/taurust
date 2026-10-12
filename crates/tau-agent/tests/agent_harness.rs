@@ -116,7 +116,7 @@ fn done(message: AssistantMessage, reason: DoneReason) -> AssistantMessageEvent 
     AssistantMessageEvent::Done { reason, message }
 }
 
-fn collect(stream: tau_agent::agent_loop::AgentStream) -> Vec<AgentEvent> {
+fn collect(stream: impl futures_util::Stream<Item = AgentEvent>) -> Vec<AgentEvent> {
     futures_executor::block_on(stream.collect::<Vec<_>>())
 }
 
@@ -198,6 +198,30 @@ fn tool_spec(name: &str) -> ToolSpec {
         prompt_snippet: None,
         prompt_guidelines: Vec::new(),
     }
+}
+
+#[test]
+fn dropping_an_unpolled_run_clears_the_running_flag() {
+    let provider = TestProvider::new(vec![vec![
+        start(),
+        done(partial("Hello"), DoneReason::Stop),
+    ]]);
+    let harness = harness(provider);
+
+    let run = harness.prompt("Hi").expect("the run starts");
+    assert!(harness.is_running());
+
+    // Abandoned before its first poll, so the stream body never executes.
+    drop(run);
+
+    assert!(
+        !harness.is_running(),
+        "an abandoned run must not leave the harness busy"
+    );
+    assert!(
+        harness.prompt("again").is_ok(),
+        "the harness must accept a new run afterwards"
+    );
 }
 
 #[test]

@@ -315,6 +315,11 @@ impl SessionStorage for JsonlSessionStorage {
 
         let _guard = self.lock(true)?;
         self.remove_incomplete_temp();
+        // A single append can leave a torn tail behind, and a batch has to clear
+        // it too: otherwise the first batched entry would be concatenated onto the
+        // partial line, and the newline the batch supplies would hide the damage
+        // from the reader's torn-tail recovery.
+        self.repair_torn_tail()?;
 
         let mut data = match std::fs::read(&self.path) {
             Ok(previous) => previous,

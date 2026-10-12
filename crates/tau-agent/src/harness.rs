@@ -17,9 +17,12 @@
 
 use std::collections::{HashSet, VecDeque};
 use std::fmt;
+use std::pin::Pin;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
+use std::task::{Context, Poll};
 
+use futures_core::Stream;
 use futures_util::StreamExt;
 
 use tau_protocol::AgentEvent;
@@ -299,6 +302,32 @@ impl Drop for Subscription {
     }
 }
 
+/// A run in progress.
+///
+/// It owns the run guard, so dropping it always clears the harness's running
+/// flag — including when the stream was never polled. A bare stream cannot do
+/// that: a generator's body only runs on the first poll, so a run that is
+/// created and then abandoned would leave the harness permanently busy.
+pub struct HarnessRun {
+    inner: AgentStream,
+    guard: Option<RunGuard>,
+}
+
+impl Stream for HarnessRun {
+    type Item = AgentEvent;
+
+    fn poll_next(self: Pin<&mut Self>, context: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+        let this = self.get_mut();
+        let next = this.inner.as_mut().poll_next(context);
+        if matches!(next, Poll::Ready(None)) {
+            // The run finished, so release the flag and run the repairs now rather
+            // than whenever the caller happens to drop the handle.
+            this.guard = None;
+        }
+        next
+    }
+}
+
 /// A reusable stateful agent brain, independent of coding and UI policy.
 #[derive(Clone)]
 pub struct AgentHarness {
@@ -480,17 +509,17 @@ impl AgentHarness {
     }
 
     /// Run the agent with one user message.
-    pub fn prompt(&self, content: &str) -> Result<AgentStream, HarnessError> {
+    pub fn prompt(&self, content: &str) -> Result<HarnessRun, HarnessError> {
         self.begin(vec![user_message(content)])
     }
 
     /// Run the agent with one message of any kind.
-    pub fn prompt_message(&self, message: AgentMessage) -> Result<AgentStream, HarnessError> {
+    pub fn prompt_message(&self, message: AgentMessage) -> Result<HarnessRun, HarnessError> {
         self.begin(vec![message])
     }
 
     /// Continue the run without adding a prompt.
-    pub fn continue_(&self) -> Result<AgentStream, HarnessError> {
+    pub fn continue_(&self) -> Result<HarnessRun, HarnessError> {
         self.begin(Vec::new())
     }
 
@@ -499,7 +528,7 @@ impl AgentHarness {
         self.state.append_interrupted_tool_results().len()
     }
 
-    fn begin(&self, prompts: Vec<AgentMessage>) -> Result<AgentStream, HarnessError> {
+    fn begin(&self, prompts: Vec<AgentMessage>) -> Result<HarnessRun, HarnessError> {
         if self.state.running.swap(true, Ordering::SeqCst) {
             return Err(HarnessError::AlreadyRunning);
         }
@@ -533,13 +562,22 @@ impl AgentHarness {
             clock: None,
         });
 
-        Ok(Box::pin(async_stream::stream! {
-            let _guard = RunGuard { state: Arc::clone(&state) };
-            while let Some(event) = inner.next().await {
-                state.notify(&event);
-                yield event;
-            }
-        }))
+        // Built here rather than inside the stream body: a stream dropped before
+        // its first poll never executes its body, and the running flag has to be
+        // cleared either way.
+        let guard = RunGuard {
+            state: Arc::clone(&self.state),
+        };
+
+        Ok(HarnessRun {
+            inner: Box::pin(async_stream::stream! {
+                while let Some(event) = inner.next().await {
+                    state.notify(&event);
+                    yield event;
+                }
+            }),
+            guard: Some(guard),
+        })
     }
 }
 
