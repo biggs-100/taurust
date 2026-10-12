@@ -187,6 +187,15 @@ is why they are kept rather than worked around.
   in the suite, clippy clean. Outstanding: the harness — stateful queues,
   subscribers, cancellation, and the interrupted-tool-result repair the reference
   runs both at the start of a run and again when a run is cancelled.
+- CI gap found and closed. The workflow only ran on a push to `main` and on pull
+  requests, so every push to the working branch went unverified: the suite was only
+  ever exercised on Linux at merge time. `feat/**` was added to the push trigger
+  (`bc2a7cc`) and the first run on the feature branch is green, which is the point
+  of the change rather than an assumption about it. Two runner annotations remain:
+  `actions/checkout` is pinned two majors behind (v4 against v7.0.1, verified
+  against the repository rather than guessed), which is why the runner reports
+  Node.js 20 as deprecated, and `ubuntu-latest` migrates to Ubuntu 26 in October
+  2026.
 - Subagent note: two `gentle-ai-explore` subagents were dispatched for the tau
   architecture map and the gentle-shell visual map; both failed with "assistant
   reported an error". Mapping is therefore done inline with bounded reads. Worth
