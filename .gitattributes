@@ -1,0 +1,9 @@
+# Normalize line endings so a Windows checkout and the Linux CI agree.
+* text=auto eol=lf
+
+# Binary assets must never be touched.
+*.png binary
+*.jpg binary
+*.gif binary
+*.ico binary
+*.svg text
