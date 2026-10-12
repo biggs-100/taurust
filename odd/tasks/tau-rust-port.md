@@ -125,7 +125,7 @@ is why they are kept rather than worked around.
 - T6 — `tau-agent`: agent loop and harness · Spec: S1 · Route: inline · Commit: `e6cea1f`, `625825a`, `bee74bc`
 - T7 — `tau-agent`: session storage with the JSONL record format · Spec: S1 · Route: inline · Commit: `7201283`, `6a77906`
 - T8 — `tau-coding`: paths, provider config resolution, credential store · Spec: S1 · Route: worker + parent verification · Commit: `dd3cd30`, `f56178b`
-- T9 — `tau-coding`: built-in tool implementations (read, write, edit, shell, search) · Spec: S1 · Route: pending · Commit: pending
+- T9 — `tau-coding`: built-in tool implementations — `read`, `write`, `edit`, `bash` — plus the image detection and normalization the `read` tool depends on · Spec: S1 · Route: parent-frozen shared core then 4 bounded writers in parallel, later rewritten into chained slices for the reviewer budget · Commit: `2008425`, `a8b661a`, `1482440`, `e052851`
 - T10 — `tau-coding`: CLI surface with parity to the typer app · Spec: S1 · Route: pending · Commit: pending
 - T11 — `tau-coding`: context and system-prompt assembly, project trust, skills, extensions · Spec: S1 · Route: pending · Commit: pending
 - T12 — `tau-tui`: primitives — theme roles, layout, width measurement, box drawing, ANSI · Spec: S2,S3 · Route: pending · Commit: pending
@@ -139,6 +139,7 @@ is why they are kept rather than worked around.
 - T20 — Providers: anthropic, openai-compatible, openai-codex, google, mistral, plus OAuth flows and the HTTP transport binding · Spec: S1 · Route: pending · Commit: pending
 - T21 — Sessions: export, reload, extensions, RPC surface, and the deferred legacy Tau-v1 record migration · Spec: S1 · Route: pending · Commit: pending
 - T22 — Parity gate: behaviour checklist run against the Rust binary, side by side with tau · Spec: S1,S3,S4 · Route: pending · Commit: pending
+- T23 — `tau-coding`: port `difflib`'s `_fancy_replace`/`_fancy_helper`/`_qformat` so `edit`'s `details.diff` reaches the reference's output for replaced blocks. Needed because the diff becomes user-visible when the tool cards and diff view land (T16). · Spec: S1 · Route: pending · Commit: pending
 
 ## Progress
 
@@ -233,8 +234,244 @@ is why they are kept rather than worked around.
   reported an error". Mapping is therefore done inline with bounded reads. Worth
   retrying with narrower prompts at the start of the TUI phase (T12+).
 
+- Subagent note: two `gentle-ai-explore` subagents were dispatched for the tau
+  architecture map and the gentle-shell visual map; both failed with "assistant
+  reported an error". Mapping is therefore done inline with bounded reads. Worth
+  retrying with narrower prompts at the start of the TUI phase (T12+).
+- T9 in progress. The task line was corrected after reading the reference: tau has
+  four built-in tools, `read`, `write`, `edit` and `bash`. There is no separate
+  search tool — `bash` carries `ls`, `grep` and `find`, and its prompt snippet
+  says so. The earlier line guessed "shell, search" and was wrong.
+  Scope decision (user, Log L5): the `read` tool detects images by content and,
+  by default, attaches them; `process_image` decodes, resizes and re-encodes
+  within deterministic limits. That is the default path, so it is ported in T9
+  rather than deferred, and it costs the workspace its first image dependency.
+  Route (Writer rule, parallelism): the model file is one 1200-line module whose
+  helpers nearly all reach more than one tool, so the parent froze the shared
+  vocabulary first (`tools/support.rs`: truncation, `format_size`, the argument
+  readers and the per-path mutation lock, with `tests/tools_support.rs`) and the
+  module skeleton with the four declarations in `tools/mod.rs`; then four bounded
+  writers implement disjoint files in one turn — `image_processing.rs`,
+  `read.rs`, `write.rs`+`edit.rs`+`diff.rs`, and `bash.rs`. The parent owns
+  integration, `fmt`, `clippy` and the seam tests in `tests/tools_catalog.rs`.
+  Rust shape deviations, all forced by the language rather than chosen:
+  `ToolDefinition` plus `to_agent_tool()` collapses into a `ToolSpec` and a
+  struct implementing `tau_agent::tools::Tool`, because the declaration already
+  carries the label, snippet and guidelines; `process_image`'s four keyword
+  limits become one `ImageLimits`; and the reference's per-call cancellation
+  signal has nowhere to go, since the Rust `Tool` trait carries none, so `bash`
+  holds an injected token from construction instead.
+
+- T9 done in two commits: `6e75739` the four tools plus the image normalization
+  they need, and this close commit. `tools.py` is one 1200-line module whose
+  helpers nearly all reach more than one tool, so the parent froze the shared
+  vocabulary first and then ran four bounded writers over disjoint files in one
+  turn. The parent's own slice went through RED and GREEN (19 tests, 0 before,
+  19 after) before anything was delegated.
+  Worker-reported counts: `image_processing` 13 integration + 9 unit, `read` 19,
+  `write`+`edit`+`diff` 56, `bash` 8 on Windows with 2 more gated to unix. After
+  integration the parent measured 200 tests in `tau-coding` and 331 in the
+  workspace, against 202 workspace-wide before T9.
+  Parent verification after the reports, not instead of them: `cargo fmt --all
+  --check` clean; `cargo clippy --workspace --all-targets -- -D warnings` clean;
+  `cargo test --workspace` green; and `cargo check` plus `cargo clippy --
+  -D warnings` for `x86_64-unknown-linux-gnu` clean, which is what typechecks
+  the `cfg(unix)` code a Windows host never compiles.
+  Three defects the parent found and fixed at integration: a dead assignment in
+  `support.rs`, an unused import in `tools_catalog.rs`, and the `\ No newline at
+  end of file` marker. The last one matters because the marker was this parent's
+  own instruction to the writer and it is **wrong**: CPython 3.12.10's
+  `difflib.unified_diff` never emits it, and because tau hands it
+  `splitlines(keepends=True)` lines, a final line with no terminator leaves the
+  next patch line glued to it (`-b+c`). Verified by running the reference's own
+  call, and now reproduced rather than corrected.
+  Checks the parent ran beyond the workers' own reports: the hand-written base64
+  encoder is pinned by a unit test to eight vectors produced by CPython 3.12.10
+  including all 256 byte values, because the workspace has no base64 dependency
+  and a symmetric encoder/decoder bug would otherwise pass; the two-hunk unified
+  patch matches CPython exactly, header ranges included; the Windows
+  shell-prefix limitation was verified against the reference's own mechanism on
+  this host (`subprocess.run('echo one\necho two', shell=True)` prints only the
+  first line), so reproducing it is faithful rather than a defect introduced
+  here; and the autojunk behaviour produced the finding below.
+  Deviation the parent found by measuring, not by trusting: `difflib.ndiff` hides
+  `SequenceMatcher`'s autojunk collapse because `_fancy_replace` re-pairs
+  identical lines as context. The port does not reproduce `_fancy_replace`, so
+  for a 250-line single-repeated-line input CPython prints 251 lines with one
+  deletion and one insertion where the port prints 375 with 125 of each; the
+  199-line case agrees exactly, and `first_changed_line` agrees in both. The
+  writer disclosed the omission in prose, but its test asserted the port's own
+  numbers under a name claiming difflib parity, which would have misled the T22
+  gate; the test is renamed and now states both sets of numbers instead. Because
+  `details.diff` becomes user-visible with the tool cards and the diff view, the
+  missing `_fancy_replace` is tracked as T23 and precedes or accompanies T16.
+  Supply chain, since the user approved a dependency choice: the `image` crate
+  brings 27 new packages into the lock, and tokio's `process` feature adds `mio`
+  and `signal-hook-registry`. `rustix` adds nothing — it was already a
+  transitive dependency and is now a direct unix-only one. All 27 new packages
+  are permissive (MIT, Apache-2.0, BSD-3-Clause, Zlib, 0BSD, Unlicense, and one
+  `Apache-2.0 WITH LLVM-exception`); audited with `cargo metadata` rather than
+  assumed, because the repository is public.
+  Disclosed fidelity deviations, all because the port has no exact counterpart:
+  WebP is encoded lossless (no pure-Rust encoder offers tau's lossy quality
+  ladder, so output is larger and the bounded resize loop may shrink further);
+  `optimize=True` has no equivalent for PNG or JPEG and the crate always
+  palette-quantizes GIF; Python's text-mode `read_text`/`write_text` means tau
+  converts an LF file to CRLF on Windows where the port keeps the detected
+  ending; `path_arg` joins the raw argument, so paths echo the separators the
+  model typed where `pathlib` normalizes them on Windows; and decode and I/O
+  failure texts carry the Rust library's message rather than Pillow's or
+  Python's.
+  Open: the unix path is compiled and linted for Linux but has never been
+  executed, because the host is Windows and the local WSL has no Rust toolchain.
+  CI runs it on Linux, so closing that gap needs a push, which is the user's
+  decision.
+- T9 correction round. The independent verifier the risk plan required FAILED the
+  candidate above, and the native review was therefore not started even though
+  the user had granted consent: starting it would have reviewed a candidate
+  already known defective, and any correction would have invalidated the
+  lineage. It found two majors the author's own 200 green tests, `fmt`, `clippy`
+  and the Linux cross-check did not see, both on paths a happy run never takes.
+  F1, Windows quoting: the tool built its shell line as
+  `arg("/C").arg(command)`, and Rust's argv quoting escapes every embedded `"`
+  as `\"`, which `cmd.exe` echoes back verbatim. Measured against the
+  reference's own mechanism: `echo "a"` gave `\"a\"` where the reference gives
+  `"a"`; `where "cmd"` exited 1 with "no files found for the given patterns"
+  where the reference finds the path; `dir "C:\Windows"` exited 1 with a cmd
+  syntax error where the reference exits 0; `python -c "print(1)"` printed
+  nothing with exit 0 where the reference prints `1`. A `git commit -m "msg"`
+  would have corrupted the message silently. Fixed by building exactly what
+  CPython's `subprocess.Popen._execute_child` builds, `<comspec> /c "<command>"`,
+  appended with tokio's `raw_arg` (confirmed present in the installed tokio
+  1.53.2) rather than with argv quoting.
+  F2, the deadline and the token stopped acting once both output streams closed:
+  the loop left its receive branch and awaited `child.wait()` with no deadline,
+  so a command that closed its own descriptors and kept running was reported as a
+  success with `timed_out: false` and `cancelled: false`. The reference does not
+  behave that way, because `Process.communicate()` waits for process exit as well
+  as for pipe EOF; the verifier measured the reference at 1.05 s with
+  `timed_out True` against a child sleeping 30 s. Fixed by awaiting the exit
+  inside the same `select!` as the deadline and the token, so the call returns
+  only when the readers are done and the child has exited.
+  F6 and F7 also fixed: the emptiness filter now precedes the trim, so a
+  whitespace-only prefix survives as `""` exactly as
+  `shell_command_prefix.strip() if shell_command_prefix else None` leaves it, and
+  the Windows shell is resolved from `COMSPEC` with `cmd` as the fallback, which
+  is what `subprocess` honours.
+  Decision (A) on the one item the writer could not deliver: F2 stays pinned by a
+  `#[cfg(unix)]` test with no Windows twin. On Windows `cmd.exe` holds the tool's
+  stdout and stderr handles until it exits, so a `cmd /C` command can never reach
+  the "pipes closed, child running" state, and the reference itself takes 148.59 s
+  for `ping -n 30 127.0.0.1 >NUL 2>&1` under a 0.25 s timeout with
+  `timed_out: true`. A Windows test asserting a prompt return would have to
+  deviate from the reference, and the writer's option C — returning as soon as the
+  child exits without waiting for pipes an orphan still holds — was rejected for
+  the same reason: it would return before collecting output the reference still
+  collects. The reference wins.
+  The honest caveat this round leaves behind: F2's fix has no observed RED or
+  GREEN anywhere, because the `#[cfg(unix)]` test cannot run on this host (WSL
+  Ubuntu-24.04 is installed but has no `cargo`, and installing a toolchain was not
+  authorized). Its discriminating power rests on a socketpair-EOF probe the writer
+  ran in real Linux — the socketpair closes 6 ms after a self-redirecting child
+  starts, so the pre-fix code would have blocked the full 30 s — and not on an
+  observed failure. The whole `cfg(unix)` suite, 12 tests, has only ever been
+  compiled here. That is the strongest single reason to push and let CI execute
+  it.
+  Remaining deviations, disclosed rather than changed, each because the port has
+  no faithful cheap counterpart: the Windows stdout and stderr are merged from two
+  racing readers rather than the reference's single fd, so their interleaving is
+  best-effort; the full-output temp log is written as bytes where the reference
+  goes through Python's text mode; the unix streams are merged with a socketpair,
+  which is visible to a program that tests its stdout type (`S_ISSOCK` rather than
+  the reference's `S_ISFIFO`); `process_group(0)` is `setpgid` and not the
+  reference's `start_new_session` `setsid`, so the child keeps the parent's session
+  and controlling terminal although the group kill still works; `~user` is not
+  expanded where `Path.expanduser` would, needing a passwd lookup this workspace
+  cannot make without `unsafe`; and a JSON boolean is rejected by the integer
+  reader where Python's `isinstance(True, int)` accepts it as 1, a coercion the
+  typed readers deliberately do not reproduce.
+  Counts after the correction: 204 tests in `tau-coding` against 200 before, with
+  `tools_bash.rs` holding 21 distinct test functions — 11 of them run on Windows
+  and 12 would run on Linux.
+- T9 second correction round. The second verification round failed the first
+  round's corrections as well, and its finding was exact: the F6 fix had traded
+  one wrong behaviour for another. The reference's prefix decision is really two
+  independent tests, not one. `prefix = shell_command_prefix.strip() if
+  shell_command_prefix else None` leaves `""` for a whitespace-only input, and
+  `executable="bash" if prefix else None` gates the shell on that value's
+  *truthiness* — so such a prefix is applied and reported as applied while the
+  command still runs `/bin/sh`. The port had started selecting `bash`, and the
+  test written for it asserted that wrong selection, which is worse than no test:
+  it would have held the deviation in place. The two decisions are now separate,
+  `shell_command_prefix_applied` staying `prefix.is_some()` while the unix
+  executable follows the prefix's truthiness, and each is pinned.
+  The same round corrected the Windows shell fallback. CPython resolves `ComSpec`,
+  then `<SystemRoot>\System32\cmd.exe`, and raises when the result is not
+  absolute; the port had used a bare `cmd`. A bare `cmd` now survives only as a
+  last resort, which deviates from CPython's raise and is stated in the code
+  rather than left silent.
+  The parent then replaced the unix test's probe. It had used
+  `${BASH_VERSION:+bash}`, which discriminates on Linux but would fail on any host
+  where `/bin/sh` is bash: the behaviour would be right and the test wrong. The
+  probe is now `printf '%s' "$0"`, which reports the executable the tool actually
+  spawned, with a control asserting `bash` for a truthy prefix so a broken probe
+  cannot pass for a correct one.
+  One further difference from the reference surfaced while making that change, and
+  is disclosed rather than fixed: the port spawns `sh` resolved through `PATH`
+  where the reference always executes the absolute `/bin/sh`, so a host with a
+  different `sh` earlier in `PATH` would diverge. The fix is one line if the
+  parity gate ever cares, and the test's expectation would move with it.
+  What this round still cannot show: the corrected unix test has never been
+  executed, only compiled for the Linux target. Its discriminating power rests on
+  a control that proves the probe detects the selected shell, not on an observed
+  failure, and the whole `cfg(unix)` suite still has to run on CI.
+  Counts after the second round: 205 tests in `tau-coding`, 12 of them unit tests
+  in the lib target, with `tools_bash.rs` holding 21 distinct test functions, 11 of
+  which run on Windows and 12 on Linux.
+  Verification trail for the reader: round 1 `fail` (two majors, six minors),
+  round 2 `fail` (the F6 fix traded one wrong behaviour for another), round 3
+  `pass`. The third round confirmed both second-round corrections against live
+  reference runs, including replaying CPython's Windows resolver across eight
+  inputs, verified that the `$0` probe still discriminates on a host where
+  `/bin/sh` is bash, and proved the Linux artifacts were freshly rebuilt rather
+  than trusting a cached `Finished` line.
+  Its one finding is low severity and is disclosed here instead of fixed: Rust's
+  `Path::is_absolute` is stricter than `ntpath.isabs`, so a `SystemRoot` that is
+  rooted without a drive (for example `\Windows`) is absolute to CPython and not
+  to Rust, and the port then degrades to the bare `cmd` last resort where CPython
+  uses the resolved path. The CPython side was verified live; the Rust side was
+  reasoned from documented `std` behaviour, since no authorized command compiles a
+  Rust probe. Real hosts set `SystemRoot=C:\Windows`, and the consequence is the
+  bare `cmd` that is already the disclosed last resort, so the fix is one line if
+  anything ever cares: test for a rooted path rather than an absolute one.
+
+- T9 was rewritten into chained slices so the native reviewer's context budget
+  could cover it. `assess` reported high risk and `reviewDue` over the whole
+  change, and the provider then refused the candidate outright with
+  `lens_context_budget_exceeded`: its complete reviewer evidence exceeded the
+  native context budget, no review authority was created, nothing was mutated, and
+  retrying that exact candidate was declared unable to succeed. The provider's own
+  remediation was a chained sequence of smaller candidates, and the user chose the
+  rewrite over losing the native receipt.
+  One honest slicing pass, each slice a coherent work unit carrying its own tests,
+  with the changed-line counts including the intermediate `mod.rs` amendments:
+  `2008425` the shared vocabulary and the image pipeline (9 files, 1960 lines),
+  `a8b661a` the read tool (3 files, 1068),
+  `1482440` the write and edit tools with their diff rendering (5 files, 2056),
+  `e052851` the bash tool and the assembled tool set (4 files, 1313).
+  Every slice was built and its whole suite run before it was committed, because a
+  slice that does not compile is a broken candidate and a reviewer would be right
+  to report it as one. The suite grew 112, 132, 188 and 205 tests along the chain,
+  green at every step.
+  The code and tests are byte-identical to the state the three verification rounds
+  passed: `git diff --name-only 2a63137 HEAD` lists this document and nothing else.
+  Every hash quoted earlier in this entry belongs to the pre-rewrite history and no
+  longer exists. The corrections those commits describe are folded into the slices
+  above on purpose, so a reviewer never re-finds a defect that is already fixed.
+
 ## Log
 
 - L1 — User: *"quiro rehacer tau pero con rust y la shell que se vea como gentle-shell  C:\Users\USER\Desktop\herramientas\gentle-shell  C:\Users\USER\Desktop\herramientas\tau"*
 - L2 — User: *"y el todo de gentle shell"* (appended while the scope questionnaire was open; the user cancelled the questionnaire). Read together with L3 as confirming the gentle-shell todo panel is in scope.
 - L4 — User: *"ok, antes de continuar crea el repo en github y pushea"*. Published at <https://github.com/biggs-100/taurust>. Asked and answered before publishing, because publishing is not fully reversible: visibility **public**, and therefore the MIT notices of both upstream works reproduced in `THIRD-PARTY-NOTICES.md` before the first push; default branch **`main`**, created at the published state, with `feat/tau-rust-port` kept as the working branch.
+- L5 — User, answering the T9 scope question with the option *"Completo ahora, con el crate `image`"*: port `image_processing.py` inside T9, accepting one new third-party dependency (`image` 0.25) in exchange for the `read` tool attaching images on its default path. Asked because the alternative was a dependency-free T9 that omits image attachments with a note and defers normalization to its own task, and because adding a dependency to a public repository is not a decision the orchestrator should make silently. The known cost, disclosed before the choice was offered: no Rust crate reproduces tau's lossy WebP encoding ladder, so only the WebP-requires-resize path is expected to deviate. To be confirmed empirically by the image unit and recorded here.
