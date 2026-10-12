@@ -5,3 +5,7 @@
 //! paths, or rendering.
 //!
 //! Ported from tau's `tau_ai` package (20 modules, ~5.5k LOC).
+
+#![forbid(unsafe_code)]
+
+pub mod fake;

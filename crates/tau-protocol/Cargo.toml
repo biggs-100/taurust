@@ -9,6 +9,7 @@ description = "The shared provider-neutral vocabulary: content, messages, tools 
 [dependencies]
 serde.workspace = true
 serde_json.workspace = true
+futures-core.workspace = true
 
 [lints]
 workspace = true

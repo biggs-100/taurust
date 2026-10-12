@@ -8,6 +8,11 @@ description = "Provider-neutral model streaming for taurust"
 
 [dependencies]
 tau-protocol.workspace = true
+futures-core.workspace = true
+
+[dev-dependencies]
+futures-util.workspace = true
+futures-executor.workspace = true
 
 [lints]
 workspace = true

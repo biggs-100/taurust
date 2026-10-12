@@ -6,9 +6,11 @@ rust-version.workspace = true
 license.workspace = true
 description = "Portable agent harness: messages, tools, loop, session"
 
+# tau_agent must never depend on tau_ai. The Python original enforces this with
+# tests/test_pi_event_protocol.py, and the Rust crate graph enforces it for free:
+# a provider is consumed through the tau-protocol trait, never by name.
 [dependencies]
 tau-protocol.workspace = true
-tau-ai.workspace = true
 
 [lints]
 workspace = true
