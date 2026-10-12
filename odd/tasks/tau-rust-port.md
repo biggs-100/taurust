@@ -121,7 +121,7 @@ is why they are kept rather than worked around.
 - T2 — `tau-protocol`: content blocks, transcript messages, usage and timing, Pi wire fidelity · Spec: S1 · Route: inline · Commit: `b9ae762`
 - T3 — `tau-protocol`: streaming events (assistant and agent), the `ModelProvider` trait; the fake provider lives in `tau-ai` · Spec: S1 · Route: inline · Commit: `5976a91`
 - T4 — `tau-ai`: error taxonomy, retry/backoff policy, proxy normalization, configuration reading; the HTTP transport binding moved into T20 · Spec: S1 · Route: inline · Commit: `31cda32`
-- T5 — `tau-agent`: tool protocol and tool registry · Spec: S1 · Route: pending · Commit: pending
+- T5 — `tau-agent`: tool execution protocol and tool registry · Spec: S1 · Route: inline · Commit: `6fafd6b`
 - T6 — `tau-agent`: agent loop and harness · Spec: S1 · Route: pending · Commit: pending
 - T7 — `tau-agent`: session storage with the JSONL record format · Spec: S1 · Route: pending · Commit: pending
 - T8 — `tau-coding`: paths, provider config resolution, credential store · Spec: S1 · Route: pending · Commit: pending
@@ -175,6 +175,11 @@ is why they are kept rather than worked around.
   repository is public and this is a derivative work, both upstream MIT notices
   were reproduced in `THIRD-PARTY-NOTICES.md` before the first push, read from the
   upstream `LICENSE` files rather than recalled.
+- T5 done. 17 tests added, 77 in the suite, clippy clean, RED observed first.
+  Consulting the reference corrected a wrong assumption: `execution_mode` and
+  `prepare_arguments` are declared on every tool in tau but its own loop never
+  reads them, so they are ported as declarations with no scheduler pretending to
+  use them.
 - Subagent note: two `gentle-ai-explore` subagents were dispatched for the tau
   architecture map and the gentle-shell visual map; both failed with "assistant
   reported an error". Mapping is therefore done inline with bounded reads. Worth
