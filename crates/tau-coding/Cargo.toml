@@ -7,6 +7,7 @@ license.workspace = true
 description = "The taurust coding application: CLI, tools, sessions, resources"
 
 [dependencies]
+tau-protocol.workspace = true
 tau-agent.workspace = true
 tau-ai.workspace = true
 

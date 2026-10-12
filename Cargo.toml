@@ -1,6 +1,7 @@
 [workspace]
 resolver = "3"
 members = [
+    "crates/tau-protocol",
     "crates/tau-ai",
     "crates/tau-agent",
     "crates/tau-coding",
@@ -15,10 +16,14 @@ license = "MIT"
 description = "Rust port of the tau coding agent, with the gentle-shell terminal experience"
 
 [workspace.dependencies]
+tau-protocol = { path = "crates/tau-protocol" }
 tau-ai = { path = "crates/tau-ai" }
 tau-agent = { path = "crates/tau-agent" }
 tau-coding = { path = "crates/tau-coding" }
 tau-tui = { path = "crates/tau-tui" }
+
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
 
 [workspace.lints.rust]
 unsafe_code = "forbid"

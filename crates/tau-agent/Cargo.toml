@@ -7,6 +7,7 @@ license.workspace = true
 description = "Portable agent harness: messages, tools, loop, session"
 
 [dependencies]
+tau-protocol.workspace = true
 tau-ai.workspace = true
 
 [lints]
