@@ -8,6 +8,7 @@
 #![forbid(unsafe_code)]
 
 pub mod agent_loop;
+pub mod harness;
 pub mod registry;
 pub mod tool_history;
 pub mod tools;
