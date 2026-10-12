@@ -10,13 +10,19 @@
 //! file per tool plus [`support`], which holds the output and argument vocabulary
 //! every tool shares.
 //!
-//! This slice adds the `read` tool. The mutating tools and the shell follow.
+//! This slice adds the mutating tools: `write`, `edit` and the diff rendering
+//! `edit` reports. The shell follows.
 
+pub mod diff;
+pub mod edit;
 pub mod image_processing;
 pub mod read;
 pub mod support;
+pub mod write;
 
+pub use edit::{EditTool, create_edit_tool};
 pub use image_processing::{ImageLimits, ImageProcessingFailure, ProcessedImage, process_image};
 pub use read::{
     ImageSupportState, LocalReadOperations, ReadOperations, ReadTool, create_read_tool,
 };
+pub use write::{WriteTool, create_write_tool};
