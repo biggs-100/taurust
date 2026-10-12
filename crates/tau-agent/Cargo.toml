@@ -11,6 +11,11 @@ description = "Portable agent harness: messages, tools, loop, session"
 # a provider is consumed through the tau-protocol trait, never by name.
 [dependencies]
 tau-protocol.workspace = true
+async-trait.workspace = true
+serde_json.workspace = true
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["macros", "rt"] }
 
 [lints]
 workspace = true

@@ -4,3 +4,10 @@
 //! primitives. It is reusable and terminal-agnostic.
 //!
 //! Ported from tau's `tau_agent` package (16 modules, ~2.4k LOC).
+
+#![forbid(unsafe_code)]
+
+pub mod registry;
+pub mod tools;
+
+pub use async_trait::async_trait;
