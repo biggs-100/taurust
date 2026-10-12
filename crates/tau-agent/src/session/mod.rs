@@ -6,8 +6,12 @@
 
 pub mod entries;
 pub mod jsonl;
+pub mod storage;
 
 pub use entries::{EntryBody, SessionEntry, current_timestamp, new_entry_id};
 pub use jsonl::{
     SessionJsonlError, entries_from_json_lines, entry_from_json_line, entry_to_json_line,
+};
+pub use storage::{
+    InMemorySessionStorage, JsonlSessionStorage, SessionStorage, SessionStorageError,
 };
