@@ -180,6 +180,14 @@ is why they are kept rather than worked around.
   `prepare_arguments` are declared on every tool in tau but its own loop never
   reads them, so they are ported as declarations with no scheduler pretending to
   use them.
+- T6 in progress, delivered as three commits because the reference spreads this
+  over ~800 lines across `loop.py`, `harness.py` and `tool_history.py`.
+  Commit `e6cea1f` covers the first part: provider-safe tool history repair, 8 tests
+  mirroring `tau/tests/test_tool_history.py`, 85 tests in the suite, clippy clean.
+  Outstanding: the agent loop (event ordering, per-turn timing, the tool execution
+  lifecycle, steering and follow-up queues, `max_turns`) and the harness (stateful
+  queues, subscribers, cancellation, interrupted-tool-result repair at run start
+  and on cancellation).
 - Subagent note: two `gentle-ai-explore` subagents were dispatched for the tau
   architecture map and the gentle-shell visual map; both failed with "assistant
   reported an error". Mapping is therefore done inline with bounded reads. Worth
