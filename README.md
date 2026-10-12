@@ -31,3 +31,16 @@ cargo clippy --all-targets --all-features
 ## Status
 
 Work in progress. The task plan lives in `odd/tasks/tau-rust-port.md`.
+
+## Licence and attribution
+
+`taurust` is MIT licensed; see [LICENSE](LICENSE).
+
+It is a derivative work, and both upstream notices are reproduced in full in
+[THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md):
+
+- **tau** (MIT, Copyright (c) 2026 Alejandro AO) — the architecture, the event
+  contract, the message and tool vocabulary, the retry and error policies and
+  the command surface are ported from it.
+- **gentle-shell** (MIT, Copyright (c) 2025 Mario Zechner) — the terminal visual
+  language is derived from it.
