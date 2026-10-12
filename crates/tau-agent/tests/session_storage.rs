@@ -211,6 +211,53 @@ fn a_malformed_line_fails_the_read_with_its_line_number() {
 }
 
 #[test]
+fn a_torn_final_line_is_ignored_and_repaired() {
+    let (_directory, path, storage) = store();
+    storage
+        .append(&user_message("committed", "e1"))
+        .expect("the append succeeds");
+
+    // Simulate a crash partway through a write: a partial line, no newline.
+    let mut contents = std::fs::read_to_string(&path).expect("the transcript is readable");
+    contents.push_str("{\"id\":\"e2\",\"type\":\"mess");
+    std::fs::write(&path, contents).expect("the torn write is simulated");
+
+    let readable = storage.read_all().expect("the read succeeds");
+    assert_eq!(
+        texts(&readable),
+        vec!["committed"],
+        "a torn tail must not make the session unreadable"
+    );
+
+    storage
+        .append(&user_message("after", "e3"))
+        .expect("the append succeeds");
+    let readable = storage.read_all().expect("the read succeeds");
+    assert_eq!(
+        texts(&readable),
+        vec!["committed", "after"],
+        "the next append must start a clean line"
+    );
+}
+
+#[test]
+fn a_terminated_malformed_line_is_still_reported() {
+    let (_directory, path, _storage) = store();
+    std::fs::write(&path, "not json\n").expect("the transcript is written");
+
+    let error = JsonlSessionStorage::new(path)
+        .read_all()
+        .expect_err("real corruption must still fail the read");
+
+    assert!(
+        error
+            .to_string()
+            .starts_with("Invalid session entry on line 1: "),
+        "unexpected message: {error}"
+    );
+}
+
+#[test]
 fn the_in_memory_store_round_trips() {
     let entries = vec![user_message("first", "e1")];
     let storage = InMemorySessionStorage::new(entries.clone());

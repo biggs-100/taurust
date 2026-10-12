@@ -308,6 +308,7 @@ dependencies = [
  "futures-core",
  "futures-executor",
  "futures-util",
+ "libc",
  "serde",
  "serde_json",
  "tau-protocol",

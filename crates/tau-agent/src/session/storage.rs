@@ -162,12 +162,11 @@ impl JsonlSessionStorage {
             std::fs::create_dir_all(parent)?;
         }
 
-        let file = OpenOptions::new()
-            .create(true)
-            .read(true)
-            .write(true)
-            .truncate(false)
-            .open(&self.lock_path)?;
+        let mut options = OpenOptions::new();
+        options.create(true).read(true).write(true).truncate(false);
+        refuse_symlinks(&mut options);
+
+        let file = options.open(&self.lock_path)?;
 
         if exclusive {
             FileExt::lock_exclusive(&file)?;
@@ -175,13 +174,18 @@ impl JsonlSessionStorage {
             FileExt::lock_shared(&file)?;
         }
 
-        restrict_to_owner(&self.lock_path);
+        // Applied to the open handle, never to the path: a path-based chmod
+        // follows a symlink, which is how someone with write access to the session
+        // directory would make this process chmod a file of their choosing.
+        make_owner_only(&file);
         Ok(LockGuard { file })
     }
 
     fn read_unlocked(&self) -> Result<Vec<SessionEntry>, SessionStorageError> {
         match std::fs::read_to_string(&self.path) {
-            Ok(contents) => Ok(entries_from_json_lines(contents.split('\n'))?),
+            Ok(contents) => Ok(entries_from_json_lines(
+                complete_entries(&contents).split('\n'),
+            )?),
             Err(error) if error.kind() == ErrorKind::NotFound => Ok(Vec::new()),
             Err(error) => Err(error.into()),
         }
@@ -204,7 +208,10 @@ impl JsonlSessionStorage {
         ));
 
         let written = (|| -> Result<(), SessionStorageError> {
-            let mut file = File::create(&unique)?;
+            let mut options = OpenOptions::new();
+            options.write(true).create_new(true);
+            owner_only_mode(&mut options);
+            let mut file = options.open(&unique)?;
             file.write_all(data)?;
             file.flush()?;
             file.sync_all()?;
@@ -218,6 +225,29 @@ impl JsonlSessionStorage {
 
         std::fs::rename(&unique, &self.path)?;
         sync_directory(&parent);
+        Ok(())
+    }
+
+    /// Truncate an interrupted final line so the next append starts a clean one.
+    ///
+    /// Without this the next append would concatenate onto the torn line and put
+    /// malformed content in the middle of the transcript, where it is real
+    /// corruption rather than a recoverable tail.
+    fn repair_torn_tail(&self) -> Result<(), SessionStorageError> {
+        let Ok(contents) = std::fs::read_to_string(&self.path) else {
+            return Ok(());
+        };
+        if contents.is_empty() || contents.ends_with('\n') {
+            return Ok(());
+        }
+
+        let keep = contents.rfind('\n').map_or(0, |index| index + 1);
+        let mut options = OpenOptions::new();
+        options.write(true);
+        refuse_symlinks(&mut options);
+
+        let file = options.open(&self.path)?;
+        file.set_len(keep as u64)?;
         Ok(())
     }
 
@@ -258,10 +288,14 @@ impl SessionStorage for JsonlSessionStorage {
         self.remove_incomplete_temp();
 
         let line = entry_to_json_line(entry)?;
-        let mut file = OpenOptions::new()
-            .create(true)
-            .append(true)
-            .open(&self.path)?;
+        self.repair_torn_tail()?;
+
+        let mut options = OpenOptions::new();
+        options.create(true).append(true);
+        refuse_symlinks(&mut options);
+        owner_only_mode(&mut options);
+
+        let mut file = options.open(&self.path)?;
         file.write_all(line.as_bytes())?;
         file.flush()?;
         file.sync_all()?;
@@ -341,15 +375,73 @@ fn sync_directory(path: &Path) {
     }
 }
 
-/// Keep the lock file readable only by its owner, where the platform allows it.
-fn restrict_to_owner(path: &Path) {
+/// Refuse to open a symlink in place of a session file.
+///
+/// Without this, someone with write access to the session directory can leave a
+/// symlink where the transcript or the lock file belongs, and this process will
+/// write session data into a file of their choosing, or lock and chmod it.
+fn refuse_symlinks(options: &mut OpenOptions) {
     #[cfg(unix)]
     {
-        use std::os::unix::fs::PermissionsExt;
-        let _ = std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600));
+        use std::os::unix::fs::OpenOptionsExt;
+        options.custom_flags(libc::O_NOFOLLOW);
+    }
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::OpenOptionsExt;
+        // FILE_FLAG_OPEN_REPARSE_POINT: open the reparse point itself, not the
+        // thing it points at.
+        const FILE_FLAG_OPEN_REPARSE_POINT: u32 = 0x0020_0000;
+        options.custom_flags(FILE_FLAG_OPEN_REPARSE_POINT);
+    }
+    #[cfg(not(any(unix, windows)))]
+    {
+        let _ = options;
+    }
+}
+
+/// Create a session file with the mode `mkstemp` would use.
+///
+/// The reference gets owner-only files for free from `mkstemp`. `File::create`
+/// leaves the mode to the umask, which on a typical machine makes a transcript
+/// and its temporary file readable by every user of the machine.
+fn owner_only_mode(options: &mut OpenOptions) {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.mode(0o600);
     }
     #[cfg(not(unix))]
     {
-        let _ = path;
+        let _ = options;
+    }
+}
+
+/// Restrict an already-open file to its owner, without touching any path.
+fn make_owner_only(file: &File) {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let _ = file.set_permissions(std::fs::Permissions::from_mode(0o600));
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = file;
+    }
+}
+
+/// Drop an unterminated final segment.
+///
+/// Every entry ends with a newline, so a final segment without one is a write
+/// that was interrupted, not an entry. Discarding it keeps a torn write from
+/// making the whole session unreadable. A malformed line that *is* terminated is
+/// still reported, because that is real corruption.
+fn complete_entries(contents: &str) -> &str {
+    if contents.is_empty() || contents.ends_with('\n') {
+        return contents;
+    }
+    match contents.rfind('\n') {
+        Some(index) => &contents[..=index],
+        None => "",
     }
 }
