@@ -500,6 +500,19 @@ is why they are kept rather than worked around.
   therefore observed running, not merely compiled. Every earlier statement in this
   entry that the `cfg(unix)` suite had only been compiled was true when written and
   is superseded by this run.
+- A defect T9 shipped and all three verification rounds missed, found later by the
+  T10 unit: `cargo build -p tau-coding --bin tau` failed with `error[E0433]: cannot
+  find 'select' in tokio` at `tools/bash.rs:133`. The tool uses `tokio::select!` and
+  the `macros` feature was declared only in `[dev-dependencies]`, so the binary did
+  not build for anyone, while `cargo test`, `cargo clippy --all-targets` and CI all
+  passed because they unify dev-dependencies. Reproduced here as exit 101, then
+  fixed by declaring the feature in `[dependencies]`.
+  The gap that hid it is closed too: CI gained a `cargo build --workspace
+  --all-features` step, deliberately without `--all-targets`, because that flag is
+  what unifies dev-dependencies. This is the second time in this port that the
+  decisive signal came from a command nobody was running — the first was the
+  `feat/**` push trigger — and it is worth stating plainly for a reader: a green
+  `cargo test` is evidence about tests, never about the artifact.
 - T10 mapped before any implementation, by a bounded explorer, because `cli.py` is
   1394 lines and its surface does not fit one reading batch. What the map settled:
   tau's typer app registers **one callback and no subcommands** (`cli.py:104`,
@@ -536,6 +549,33 @@ is why they are kept rather than worked around.
   formatting.
   The reference has no `__main__.py`, so the `tau` console script is its only entry
   point.
+- T10's first unit is implemented: the parse surface. Before writing anything, the
+  unit ran the reference through `typer.testing.CliRunner` the way its own
+  `tests/test_cli.py` does and recorded stdout, stderr and the exit code for
+  no-arguments, `-v`, `--version`, `-V`, `-h`, `--help`, an unknown word, an unknown
+  flag, a bad option value and a pseudo-command name used as a positional. That
+  table is the contract now, and it settled four things that reasoning would have
+  got wrong: the reference accepts `-v` but neither `-V` nor `-h`, which both become
+  prompt text; `--help` is eager and beats value conversion yet loses to a structural
+  parse error; value conversion follows command-line order while `--version` is a
+  body check that runs last, so `-v --max-retries abc` exits 2 while `--help
+  --max-retries abc` exits 0; and `allow_interspersed_args = False` stops parsing at
+  the first positional, so `-p hi --session-id x` is a prompt and not a session id.
+  Delivered: 31 registered options with the reference's names, types, defaults,
+  repetition and hidden flags, a Click-compatible parser, the outcome enum and the
+  prompt assembly. The port's two invented behaviours are gone: `-V` is no longer a
+  version flag, and `tau: unsupported argument:` with exit 2 — which the reference
+  does not have at all — was replaced by the prompt behaviour that was observed.
+  `tau-coding` went from 205 to 251 tests: `tests/cli.rs` 4 to 20 and 30 new ones in
+  `tests/cli_surface.rs`, each naming the reference test it mirrors, plus a
+  differential run of 27 error paths against the built binary that matched exit
+  codes and message text in every case.
+  Disclosed differences: the help *content* is the reference's while Click's and
+  Rich's box layout is not reproduced; a usage error prints `Error: <message>`
+  rather than a bordered panel, with the same text and exit code 2; every path whose
+  module is unported reports one line naming that module and exits 2, which T22 must
+  treat as a known divergence; and `validate_session_id` plus `PrintOutputMode` live
+  in `cli.rs` as debts until `session_manager` and `rendering` are ported.
 
 ## Log
 
