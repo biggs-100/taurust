@@ -8,6 +8,8 @@
 
 #![forbid(unsafe_code)]
 
+pub mod paths;
+
 /// The version of the taurust coding application.
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 

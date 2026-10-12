@@ -10,6 +10,11 @@ description = "The taurust coding application: CLI, tools, sessions, resources"
 tau-protocol.workspace = true
 tau-agent.workspace = true
 tau-ai.workspace = true
+sha2.workspace = true
+dirs.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
 
 [lints]
 workspace = true
