@@ -182,12 +182,11 @@ is why they are kept rather than worked around.
   use them.
 - T6 in progress, delivered as three commits because the reference spreads this
   over ~800 lines across `loop.py`, `harness.py` and `tool_history.py`.
-  Commit `e6cea1f` covers the first part: provider-safe tool history repair, 8 tests
-  mirroring `tau/tests/test_tool_history.py`, 85 tests in the suite, clippy clean.
-  Outstanding: the agent loop (event ordering, per-turn timing, the tool execution
-  lifecycle, steering and follow-up queues, `max_turns`) and the harness (stateful
-  queues, subscribers, cancellation, interrupted-tool-result repair at run start
-  and on cancellation).
+  Commit `e6cea1f`: provider-safe tool history repair, 8 tests mirroring
+  `tau/tests/test_tool_history.py`. Commit `625825a`: the agent loop, 11 tests, 96
+  in the suite, clippy clean. Outstanding: the harness — stateful queues,
+  subscribers, cancellation, and the interrupted-tool-result repair the reference
+  runs both at the start of a run and again when a run is cancelled.
 - Subagent note: two `gentle-ai-explore` subagents were dispatched for the tau
   architecture map and the gentle-shell visual map; both failed with "assistant
   reported an error". Mapping is therefore done inline with bounded reads. Worth
