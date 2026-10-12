@@ -10,10 +10,13 @@
 //! file per tool plus [`support`], which holds the output and argument vocabulary
 //! every tool shares.
 //!
-//! This slice carries that vocabulary and the image pipeline the `read` tool
-//! needs. The tools themselves follow.
+//! This slice adds the `read` tool. The mutating tools and the shell follow.
 
 pub mod image_processing;
+pub mod read;
 pub mod support;
 
 pub use image_processing::{ImageLimits, ImageProcessingFailure, ProcessedImage, process_image};
+pub use read::{
+    ImageSupportState, LocalReadOperations, ReadOperations, ReadTool, create_read_tool,
+};
