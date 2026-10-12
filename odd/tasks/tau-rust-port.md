@@ -488,6 +488,18 @@ is why they are kept rather than worked around.
   and its absence does not lower the bar: `fmt`, `clippy --workspace --all-targets
   -- -D warnings`, the 331-test workspace suite and the Linux cross-check all
   still stand, and the chained slices remain the reviewable history.
+- The gap those verification rounds could not close is now closed by execution
+  rather than by argument. The branch was pushed and CI ran on Linux at `ea8ae43`,
+  green in 36 s, with `tests/tools_bash.rs` reporting **12 passed, 0 failed** — the
+  12 `cfg(unix)` tests, against 11 on Windows. Both items the verifiers had to mark
+  unproven passed there: `bash_keeps_a_whitespace_only_shell_command_prefix`, which
+  runs the `$0` probe and asserts `/bin/sh` was selected, and
+  `bash_times_out_a_child_that_closed_its_own_output`, which is the F2 fix. The
+  unix path — the process-group leader, the `rustix` process-group kill and the
+  wait loop that keeps its deadline armed after a child closes its own output — is
+  therefore observed running, not merely compiled. Every earlier statement in this
+  entry that the `cfg(unix)` suite had only been compiled was true when written and
+  is superseded by this run.
 
 ## Log
 
