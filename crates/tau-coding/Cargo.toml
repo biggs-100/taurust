@@ -12,6 +12,8 @@ tau-agent.workspace = true
 tau-ai.workspace = true
 sha2.workspace = true
 dirs.workspace = true
+serde_json.workspace = true
+tempfile.workspace = true
 
 [dev-dependencies]
 tempfile.workspace = true

@@ -440,6 +440,7 @@ name = "tau-coding"
 version = "0.1.0"
 dependencies = [
  "dirs",
+ "serde_json",
  "sha2",
  "tau-agent",
  "tau-ai",
