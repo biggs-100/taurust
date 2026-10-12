@@ -10,6 +10,7 @@
 pub mod agent_loop;
 pub mod harness;
 pub mod registry;
+pub mod session;
 pub mod tool_history;
 pub mod tools;
 
