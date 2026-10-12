@@ -1,0 +1,13 @@
+[package]
+name = "tau-agent"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Portable agent harness: messages, tools, loop, session"
+
+[dependencies]
+tau-ai.workspace = true
+
+[lints]
+workspace = true

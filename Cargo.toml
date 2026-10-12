@@ -1,0 +1,27 @@
+[workspace]
+resolver = "3"
+members = [
+    "crates/tau-ai",
+    "crates/tau-agent",
+    "crates/tau-coding",
+    "crates/tau-tui",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.85"
+license = "MIT"
+description = "Rust port of the tau coding agent, with the gentle-shell terminal experience"
+
+[workspace.dependencies]
+tau-ai = { path = "crates/tau-ai" }
+tau-agent = { path = "crates/tau-agent" }
+tau-coding = { path = "crates/tau-coding" }
+tau-tui = { path = "crates/tau-tui" }
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+
+[workspace.lints.clippy]
+all = { level = "warn", priority = -1 }

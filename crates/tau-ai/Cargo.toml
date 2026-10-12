@@ -1,0 +1,12 @@
+[package]
+name = "tau-ai"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Provider-neutral model streaming for taurust"
+
+[dependencies]
+
+[lints]
+workspace = true

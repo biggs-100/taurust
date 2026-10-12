@@ -1,0 +1,18 @@
+[package]
+name = "tau-coding"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "The taurust coding application: CLI, tools, sessions, resources"
+
+[dependencies]
+tau-agent.workspace = true
+tau-ai.workspace = true
+
+[lints]
+workspace = true
+
+[[bin]]
+name = "tau"
+path = "src/main.rs"
