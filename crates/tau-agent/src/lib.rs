@@ -8,6 +8,7 @@
 #![forbid(unsafe_code)]
 
 pub mod registry;
+pub mod tool_history;
 pub mod tools;
 
 pub use async_trait::async_trait;
