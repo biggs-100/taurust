@@ -576,6 +576,33 @@ is why they are kept rather than worked around.
   module is unported reports one line naming that module and exits 2, which T22 must
   treat as a known divergence; and `validate_session_id` plus `PrintOutputMode` live
   in `cli.rs` as debts until `session_manager` and `rendering` are ported.
+- T10's remaining portable gaps are closed. `TAU_HOME` is validated exactly where the
+  reference validates it — after the eager help and the `--version` short-circuit,
+  but before every other body check, so a conversion error wins while a body error
+  does not — and a relative value produces the reference's usage error with exit 2.
+  Integer options accept Python's digit-separated underscores and reject `1__0`,
+  `_1`, `1_`, `+_1` and `-_1`, which is the rule `int()` actually implements.
+  Both usage-error shapes are reproduced: a type or body error prints the usage
+  block with `Try 'tau --help' for help.` before the message, a parser-structural
+  error prints the message alone, and everything goes to stderr with stdout empty.
+  That change removed one more port-invented string — the port had been prepending
+  `Error:`, which the reference never prints inline. `tau-coding` is at 262 tests,
+  and `paths.rs` needed no change, because the faithful surface is validating the
+  home resolution the reference itself wraps in a `BadParameter`.
+- T10's known divergences, listed here so the T22 parity gate treats them as
+  intended rather than as regressions: the help *content* matches the reference
+  while Typer's and Rich's panel layout is deliberately not reproduced, which the
+  reference's own whitespace-collapsed assertions do not pin; a usage error prints
+  the identical text and exit code without the bordered `Error` panel title; every
+  path whose module is unported prints one line naming that module and exits 2,
+  where the reference exits 0 or 1; float options reject Python's underscore
+  separators and no option accepts Unicode decimal digits; `Path.expanduser` is not
+  reproduced on the export destination; and `validate_session_id` with
+  `PrintOutputMode` live in `cli.rs` until `session_manager` and `rendering` exist.
+  One platform split the unit found and left alone: on Windows the reference's
+  `expanduser` returns an absolute path for an unknown `~user` and exits 0, while on
+  Linux it behaves as the port does, so the reference is inconsistent with itself
+  there and the port follows its Linux path.
 
 ## Log
 
