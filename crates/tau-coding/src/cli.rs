@@ -46,7 +46,11 @@
 //! Two error renderings exist in the reference. A type or body error is printed
 //! under the usage block and `Try 'tau --help' for help.`; a structural parser
 //! error is printed alone, because Click only renders usage for an error that
-//! carries its context.
+//! carries its context. The reference wraps each in a bordered `Error` panel;
+//! the port's plain-text reduction keeps the same division of parts and drops
+//! only the panel art, so a structural error prints its message alone and a
+//! type or body error prints the usage block, the advice line, then the
+//! message. Both go to stderr with exit code 2.
 //!
 //! # Deliberate deviations
 //!
@@ -59,8 +63,8 @@
 //! - `USAGE` is extracted from the rendering, so the usage line appears twice in
 //!   this file. A test pins them equal.
 //! - The numeric readers trim surrounding whitespace, as Python's `int()` and
-//!   `float()` do, but do not reproduce Python's accepted underscores
-//!   (`int("1_0") == 10`).
+//!   `float()` do. The integer readers also reproduce Python's accepted
+//!   underscores (`int("1_0") == 10`); the float readers do not.
 //! - `session_manager.validate_session_id` is reproduced here because the CLI
 //!   surfaces its messages as usage errors and `tau-coding::session_manager` is
 //!   not ported. It must move there, with its four constants, when it is.
@@ -69,9 +73,10 @@
 //!   not ported: they belong to the system-prompt assembly module. The raw
 //!   values are carried instead.
 //! - The `TauPaths()` construction check that turns a malformed `TAU_HOME` into
-//!   a usage error (`cli.py:387-390`) is not performed here. It belongs to
-//!   `tau-coding::paths` and needs the environment source, which the parse
-//!   surface deliberately does not read.
+//!   a usage error (`cli.py:387-394`) is performed here through
+//!   [`crate::paths::tau_home_from`], the entry point that raises the same two
+//!   messages. Reading goes through an [`EnvSource`], so tests need no process
+//!   state.
 //! - `_parse_export_cli_args` uses `Path.expanduser()`. Rust's `PathBuf` has no
 //!   equivalent without a passwd lookup, so a `~`-prefixed export destination is
 //!   passed through unchanged.
@@ -82,6 +87,7 @@ use std::path::PathBuf;
 use tau_ai::env::{
     DEFAULT_OPENAI_COMPATIBLE_BASE_URL, DEFAULT_OPENAI_COMPATIBLE_MAX_RETRIES,
     DEFAULT_OPENAI_COMPATIBLE_MAX_RETRY_DELAY_SECONDS, DEFAULT_OPENAI_COMPATIBLE_TIMEOUT_SECONDS,
+    EnvSource, ProcessEnv,
 };
 
 // The reference reaches this type through `tau_coding.thinking`, which is not
@@ -89,6 +95,7 @@ use tau_ai::env::{
 // and it must move to `tau-coding::thinking` when that module lands.
 pub use crate::provider_config::ThinkingLevel;
 
+use crate::paths::tau_home_from;
 use crate::provider_config::{DEFAULT_MODEL, DEFAULT_PROVIDER_NAME, normalize_thinking_level};
 
 /// One declared option, as the parse surface exposes it for inspection.
@@ -141,9 +148,6 @@ pub const USAGE: &str = "Usage: tau [OPTIONS] [prompt_args]... COMMAND [ARGS]...
 
 /// The advice line the reference prints under the usage block.
 const TRY_HELP: &str = "Try 'tau --help' for help.";
-
-/// The title of the panel the reference prints an error in.
-const ERROR_TITLE: &str = "Error";
 
 /// The full `--help` rendering.
 ///
@@ -538,22 +542,41 @@ impl UsageError {
 
     /// The plain-text reduction of what the reference writes to stderr.
     ///
-    /// The reference prints the usage block and its advice line first, then the
-    /// message inside a bordered panel titled `Error`. The strings are the
-    /// reference's; the panel borders are not reproduced.
+    /// The reference renders both shapes inside a bordered `Error` panel; the
+    /// port keeps the two shapes and drops only the panel art. A type or body
+    /// error (`usage: true`) prints the usage block, then the advice line, then
+    /// the message; a structural parser error (`usage: false`) prints the
+    /// message alone.
     pub fn render(&self) -> String {
         if self.usage {
-            format!("{USAGE}\n{TRY_HELP}\n{ERROR_TITLE}: {}\n", self.message)
+            format!("{USAGE}\n{TRY_HELP}\n{}\n", self.message)
         } else {
-            format!("{ERROR_TITLE}: {}\n", self.message)
+            format!("{}\n", self.message)
         }
     }
 }
 
-/// Interpret the process arguments, without reading anything.
+/// Interpret the process arguments, reading the process environment for the
+/// `TAU_HOME` check.
 ///
 /// Argument zero (the program name) must already have been removed.
 pub fn parse_args<I, S>(args: I) -> CliOutcome
+where
+    I: IntoIterator<Item = S>,
+    S: AsRef<str>,
+{
+    parse_args_with_env(args, &ProcessEnv)
+}
+
+/// Interpret the process arguments against an injected environment.
+///
+/// Same contract as [`parse_args`], with the environment a caller provides.
+/// The `TAU_HOME` validation reads it, exactly as the reference's `TauPaths()`
+/// reads `os.environ` in the callback body (`cli.py:387-394`), so a test can
+/// exercise the check without mutating process state.
+///
+/// Argument zero (the program name) must already have been removed.
+pub fn parse_args_with_env<I, S>(args: I, env: &dyn EnvSource) -> CliOutcome
 where
     I: IntoIterator<Item = S>,
     S: AsRef<str>,
@@ -576,7 +599,7 @@ where
     }
 
     match raw.into_options() {
-        Ok(options) => dispatch(options),
+        Ok(options) => dispatch(options, env),
         Err(error) => CliOutcome::Usage(error),
     }
 }
@@ -658,12 +681,21 @@ pub fn parse_export_args(args: &[String]) -> Result<ExportRequest, UsageError> {
 const EXPORT_USAGE: &str = "Usage: tau export <session-id-or-jsonl> [--format html|jsonl] [output]";
 
 /// The callback body, in the reference's own order (`cli.py:384-515`).
-fn dispatch(mut options: CliOptions) -> CliOutcome {
+fn dispatch(mut options: CliOptions, env: &dyn EnvSource) -> CliOutcome {
     // The callback's first act: `if version: echo(f"tau {current_version}")`.
     // It runs after value conversion (which is why a bad value still wins) and
     // before every other body validation.
     if options.version {
         return CliOutcome::Version;
+    }
+
+    // `TauPaths()` is built before the subcommand check and every other body
+    // validation (`cli.py:387-394`), and a malformed `TAU_HOME` escapes as a
+    // `BadParameter` naming the parameter. Only the home resolution is
+    // reachable here: the reference catches `ValueError`, which is what
+    // `_default_tau_home` raises, and nothing else.
+    if let Err(error) = tau_home_from(env, None) {
+        return CliOutcome::Usage(UsageError::invalid_value_for("TAU_HOME", error.message()));
     }
 
     if options.approve && options.no_approve {
@@ -1509,14 +1541,38 @@ fn conversion_hint(id: Opt) -> String {
         .join(" / ")
 }
 
-/// `int(value)`, with Python's surrounding-whitespace tolerance.
+/// `int(value)`, with Python's surrounding-whitespace and underscore
+/// tolerance: `int("1_0") == 10`, while `1__0`, `_1` and `1_` are rejected.
 fn read_int(id: Opt, raw: &str) -> Result<i64, UsageError> {
-    raw.trim().parse::<i64>().map_err(|_| {
+    let parsed = strip_python_underscores(raw.trim()).and_then(|digits| digits.parse::<i64>().ok());
+    parsed.ok_or_else(|| {
         UsageError::invalid_value_for(
             &conversion_hint(id),
             &format!("'{raw}' is not a valid int."),
         )
     })
+}
+
+/// Remove Python's accepted underscore separators, or return `None` when one is
+/// misplaced. Python allows an underscore only between two decimal digits, so
+/// `1_0` and `1_0_0` are valid while `1__0`, `_1`, `1_`, `+_1` and `-_1` are
+/// not.
+fn strip_python_underscores(value: &str) -> Option<String> {
+    let characters: Vec<char> = value.chars().collect();
+    let mut normalized = String::with_capacity(value.len());
+    for (index, character) in characters.iter().enumerate() {
+        if *character == '_' {
+            let previous_is_digit = index > 0 && characters[index - 1].is_ascii_digit();
+            let next_is_digit =
+                index + 1 < characters.len() && characters[index + 1].is_ascii_digit();
+            if !(previous_is_digit && next_is_digit) {
+                return None;
+            }
+        } else {
+            normalized.push(*character);
+        }
+    }
+    Some(normalized)
 }
 
 /// `float(value)`, with Python's surrounding-whitespace tolerance.

@@ -15,10 +15,11 @@
 
 use std::path::PathBuf;
 
+use tau_ai::env::MapEnv;
 use tau_coding::VERSION;
 use tau_coding::cli::{
     CliOptions, CliOutcome, PrintOutputMode, PseudoCommand, ThinkingLevel, USAGE, UsageError,
-    merge_stdin_prompt, parse_args,
+    merge_stdin_prompt, parse_args, parse_args_with_env,
 };
 
 fn interactive(argv: &[&str]) -> CliOptions {
@@ -567,5 +568,176 @@ fn update_usage_errors_match_the_reference() {
     assert_eq!(
         USAGE,
         "Usage: tau [OPTIONS] [prompt_args]... COMMAND [ARGS]..."
+    );
+}
+
+/// Mirror of `tests/test_cli.py::test_relative_tau_home_reports_actionable_cli_error`.
+///
+/// Observed against the reference: `TAU_HOME=.tau-personal tau providers` exits
+/// 2 and stderr carries the usage block, `Try 'tau --help' for help.` and
+/// `Invalid value for TAU_HOME: TAU_HOME must be an absolute path after '~'
+/// expansion`. The reference builds `TauPaths()` in the callback body
+/// (`cli.py:387-394`) and lets the `BadParameter` escape.
+#[test]
+fn relative_tau_home_reports_a_usage_error() {
+    let env = MapEnv::new().with("TAU_HOME", ".tau-personal");
+    let outcome = parse_args_with_env(["providers"], &env);
+    let CliOutcome::Usage(error) = outcome else {
+        panic!("expected a usage error, got {outcome:?}");
+    };
+    assert_eq!(error.exit_code(), 2);
+    assert!(error.usage, "the reference renders the usage block");
+    assert_eq!(
+        error.message,
+        "Invalid value for TAU_HOME: TAU_HOME must be an absolute path after '~' expansion"
+    );
+    let rendered = error.render();
+    assert!(rendered.starts_with(USAGE), "rendered: {rendered}");
+    assert!(
+        rendered.contains("Try 'tau --help' for help."),
+        "rendered: {rendered}"
+    );
+}
+
+/// Observed: `--help` is eager and `--version` runs first in the body, so both
+/// win over a malformed `TAU_HOME` (exit 0).
+#[test]
+fn help_and_version_bypass_the_tau_home_check() {
+    let env = MapEnv::new().with("TAU_HOME", ".tau-personal");
+    assert_eq!(parse_args_with_env(["--help"], &env), CliOutcome::Help);
+    assert_eq!(
+        parse_args_with_env(["--version"], &env),
+        CliOutcome::Version
+    );
+}
+
+/// Observed: value conversion runs before the callback body, so a bad option
+/// value wins over a malformed `TAU_HOME`.
+#[test]
+fn value_conversion_wins_over_a_bad_tau_home() {
+    let env = MapEnv::new().with("TAU_HOME", ".tau-personal");
+    let CliOutcome::Usage(error) = parse_args_with_env(["--max-retries", "abc"], &env) else {
+        panic!("expected a usage error");
+    };
+    assert_eq!(
+        error.message,
+        "Invalid value for '--max-retries': 'abc' is not a valid int."
+    );
+}
+
+/// Observed: `TauPaths()` is built before every other body validation, so a
+/// malformed `TAU_HOME` wins over `--approve`/`--no-approve`.
+#[test]
+fn the_tau_home_check_wins_over_body_validation() {
+    let env = MapEnv::new().with("TAU_HOME", ".tau-personal");
+    let CliOutcome::Usage(error) =
+        parse_args_with_env(["--approve", "--no-approve", "setup"], &env)
+    else {
+        panic!("expected a usage error");
+    };
+    assert!(
+        error.message.starts_with("Invalid value for TAU_HOME:"),
+        "message: {}",
+        error.message
+    );
+}
+
+/// Observed: a valid absolute `TAU_HOME` and an empty one are both accepted; the
+/// empty value falls back to `<home>/.tau` (`paths.py:14-18`).
+#[test]
+fn a_valid_or_empty_tau_home_is_accepted() {
+    let absolute = if cfg!(windows) {
+        r"C:\tau-home"
+    } else {
+        "/tau-home"
+    };
+    for value in [absolute, ""] {
+        let env = MapEnv::new().with("TAU_HOME", value);
+        assert_eq!(
+            parse_args_with_env(["providers"], &env),
+            CliOutcome::Command(PseudoCommand::Providers),
+            "TAU_HOME={value:?}"
+        );
+    }
+}
+
+/// Mirror of Python's `int()` underscore rule, observed live against the
+/// reference: underscores are accepted only between decimal digits.
+#[test]
+fn integer_options_accept_python_underscore_separators() {
+    // Observed: `int("1_0") == 10`, `int("1_000") == 1000`,
+    // `int("1_0_0") == 100` and surrounding whitespace is stripped too.
+    assert_eq!(interactive(&["--max-retries", "1_0"]).setup_max_retries, 10);
+    assert_eq!(
+        interactive(&["--max-retries", "1_000"]).setup_max_retries,
+        1000
+    );
+    assert_eq!(
+        interactive(&["--max-retries", "1_0_0"]).setup_max_retries,
+        100
+    );
+    assert_eq!(
+        interactive(&["--max-retries", " 1_0 "]).setup_max_retries,
+        10
+    );
+    assert_eq!(
+        interactive(&["--max-retries", "+1_0"]).setup_max_retries,
+        10
+    );
+    assert_eq!(
+        interactive(&["--max-retries", "-1_0"]).setup_max_retries,
+        -10
+    );
+    assert_eq!(interactive(&["--max-retries", "0_0"]).setup_max_retries, 0);
+    // The other integer-valued option takes the same reader.
+    assert_eq!(
+        interactive(&["--auto-compact-threshold", "1_0"]).auto_compact_threshold,
+        Some(10)
+    );
+}
+
+/// Observed: the reference rejects `1__0`, `_1`, `1_`, `+_1`, `-_1` and
+/// `1_0.0` with `Invalid value for '--max-retries': '<value>' is not a valid int.`
+#[test]
+fn integer_options_reject_misplaced_underscores() {
+    for value in ["1__0", "_1", "1_", "+_1", "-_1", "1_0.0"] {
+        let error = usage(&["--max-retries", value]);
+        assert_eq!(
+            error.message,
+            format!("Invalid value for '--max-retries': '{value}' is not a valid int."),
+            "value: {value:?}"
+        );
+        assert_eq!(error.exit_code(), 2, "value: {value:?}");
+    }
+}
+
+/// Observed: a parser-structural error is rendered alone, with no usage block
+/// and no advice line, on stderr, exit 2.
+#[test]
+fn a_structural_error_prints_the_message_alone() {
+    let error = usage(&["--max-retries"]);
+    assert!(!error.usage);
+    assert_eq!(
+        error.render(),
+        "Option '--max-retries' requires an argument.\n"
+    );
+    assert_eq!(
+        usage(&["--print=1"]).render(),
+        "Option '--print' does not take a value.\n"
+    );
+}
+
+/// Observed: a type or body error renders the usage block, then
+/// `Try 'tau --help' for help.`, then the message, on stderr, exit 2.
+#[test]
+fn a_type_error_prints_usage_advice_then_the_message() {
+    let error = usage(&["--max-retries", "abc"]);
+    assert!(error.usage);
+    assert_eq!(
+        error.render(),
+        format!(
+            "{USAGE}\nTry 'tau --help' for help.\n\
+             Invalid value for '--max-retries': 'abc' is not a valid int.\n"
+        )
     );
 }

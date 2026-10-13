@@ -292,10 +292,10 @@ fn a_structural_parse_error_wins_over_help() {
     let error = usage(&["--help", "--model"]);
     assert_eq!(error.message, "Option '--model' requires an argument.");
     assert!(!error.usage);
-    assert_eq!(
-        error.render(),
-        "Error: Option '--model' requires an argument.\n"
-    );
+    // Observed: the reference renders this inside its `Error` panel alone, with
+    // no usage block and no advice line. The port's plain-text reduction prints
+    // the message alone.
+    assert_eq!(error.render(), "Option '--model' requires an argument.\n");
     // Observed: `-e` reports the token that was typed.
     assert_eq!(usage(&["-e"]).message, "Option '-e' requires an argument.");
     // Observed: `--print=true` is a structural error too.
@@ -424,6 +424,7 @@ fn the_unported_paths_report_what_they_wait_for() {
     // ported, so the port names the module it waits for in one line instead of
     // pretending the shell started.
     let interactive_run = Command::new(binary)
+        .env_remove("TAU_HOME")
         .output()
         .expect("tau runs with no arguments");
     assert_eq!(interactive_run.status.code(), Some(2));
@@ -431,4 +432,63 @@ fn the_unported_paths_report_what_they_wait_for() {
     assert_eq!(stderr.lines().count(), 1, "stderr: {stderr}");
     assert!(stderr.contains("not implemented yet"), "stderr: {stderr}");
     assert!(stderr.contains("tau-tui"), "stderr: {stderr}");
+}
+
+/// Observed: the two Click error shapes reach stderr in full and stdout stays
+/// empty. A parser-structural error prints the message alone; a type or body
+/// error prints the usage block, then `Try 'tau --help' for help.`, then the
+/// message. Both exit 2.
+#[test]
+fn the_two_usage_error_shapes_reach_stderr_in_full() {
+    let binary = env!("CARGO_BIN_EXE_tau");
+
+    let structural = Command::new(binary)
+        .args(["--max-retries"])
+        .env_remove("TAU_HOME")
+        .output()
+        .expect("tau --max-retries runs");
+    assert_eq!(structural.status.code(), Some(2));
+    assert!(structural.stdout.is_empty(), "stdout: {structural:?}");
+    assert_eq!(
+        String::from_utf8_lossy(&structural.stderr),
+        "Option '--max-retries' requires an argument.\n"
+    );
+
+    let typed = Command::new(binary)
+        .args(["--max-retries", "abc"])
+        .env_remove("TAU_HOME")
+        .output()
+        .expect("tau --max-retries abc runs");
+    assert_eq!(typed.status.code(), Some(2));
+    assert!(typed.stdout.is_empty(), "stdout: {typed:?}");
+    assert_eq!(
+        String::from_utf8_lossy(&typed.stderr),
+        format!(
+            "{USAGE}\nTry 'tau --help' for help.\n\
+             Invalid value for '--max-retries': 'abc' is not a valid int.\n"
+        )
+    );
+}
+
+/// Mirror of `tests/test_cli.py::test_relative_tau_home_reports_actionable_cli_error`,
+/// driven through the built binary so the check is observed on the real entry
+/// point, not only through the library call.
+#[test]
+fn a_bad_tau_home_exits_two_with_the_reference_message() {
+    let binary = env!("CARGO_BIN_EXE_tau");
+    let output = Command::new(binary)
+        .args(["providers"])
+        .env("TAU_HOME", ".tau-personal")
+        .output()
+        .expect("tau providers runs");
+    assert_eq!(output.status.code(), Some(2));
+    assert!(output.stdout.is_empty(), "stdout: {output:?}");
+    assert_eq!(
+        String::from_utf8_lossy(&output.stderr),
+        format!(
+            "{USAGE}\nTry 'tau --help' for help.\n\
+             Invalid value for TAU_HOME: \
+             TAU_HOME must be an absolute path after '~' expansion\n"
+        )
+    );
 }
